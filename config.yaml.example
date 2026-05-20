@@ -1,0 +1,35 @@
+# 简历优化系统配置文件
+# 可通过 scripts/import_llm_config.py 从 OpenClaw 导入 LLM 配置
+
+# LLM 配置
+llm:
+  default_provider: mimo
+  providers:
+    mimo:
+      name: "mimo"
+      base_url: "https://token-plan-cn.xiaomimimo.com/v1"
+      api_key: "your-mimo-api-key"
+      models:
+        - id: "mimo-v2.5"
+          name: "MiMo V2.5"
+          is_default: true
+        - id: "mimo-v2.5-pro"
+          name: "MiMo V2.5 Pro"
+
+    deepseek:
+      name: "deepseek"
+      base_url: "https://api.deepseek.com"
+      api_key: "your-deepseek-api-key"
+      models:
+        - id: "deepseek-v4-flash"
+          name: "DeepSeek V4 Flash"
+        - id: "deepseek-v4-pro"
+          name: "DeepSeek V4 Pro"
+
+# 数据库配置
+database:
+  url: "sqlite:///./data/db/resume_optimizer.db"
+
+# 文件存储配置
+files:
+  dir: "./data/files"
