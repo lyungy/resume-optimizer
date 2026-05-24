@@ -8,6 +8,7 @@ from .optimization import router as optimization_router
 from .interview import router as interview_router
 from .llm import router as llm_router
 from .stats import router as stats_router
+from .collector import router as collector_router
 
 __all__ = [
     "company_router",
@@ -17,4 +18,5 @@ __all__ = [
     "interview_router",
     "llm_router",
     "stats_router",
+    "collector_router",
 ]

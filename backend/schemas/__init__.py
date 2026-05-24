@@ -3,7 +3,7 @@ Schema 包
 """
 from .company import CompanyCreate, CompanyUpdate, CompanyResponse, CompanyListResponse
 from .jd import JDCreate, JDUpdate, JDParseResult, JDResponse, JDListResponse
-from .resume import ResumeResponse, ResumeListResponse
+from .resume import ResumeResponse, ResumeListResponse, DeepAnalyzeResponse, ProfileUpdateRequest, SearchMatchRequest
 from .optimization import (
     OptimizationCreate,
     OptimizationResult,
@@ -28,6 +28,9 @@ __all__ = [
     "JDListResponse",
     "ResumeResponse",
     "ResumeListResponse",
+    "DeepAnalyzeResponse",
+    "ProfileUpdateRequest",
+    "SearchMatchRequest",
     "OptimizationCreate",
     "OptimizationResult",
     "OptimizationResponse",

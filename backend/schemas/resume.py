@@ -18,11 +18,38 @@ class ResumeResponse(BaseModel):
     education: Optional[dict] = None
     work_experience: Optional[list[dict]] = None
     projects: Optional[list[dict]] = None
+    profile: Optional[dict] = None
+    recommended_positions: Optional[list[dict]] = None
+    job_preference: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class DeepAnalyzeResponse(BaseModel):
+    """深度解析响应"""
+    profile: dict
+    recommended_positions: list[dict]
+    search_keywords: list[str]
+
+
+class ProfileUpdateRequest(BaseModel):
+    """求职画像更新请求"""
+    profile: Optional[dict] = None
+    recommended_positions: Optional[list[dict]] = None
+    job_preference: Optional[dict] = None
+
+
+class SearchMatchRequest(BaseModel):
+    """搜索匹配请求"""
+    resume_id: str
+    selected_positions: list[str]
+    city: str = "上海"
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    limit_per_keyword: int = 20
 
 
 class ResumeListResponse(BaseModel):

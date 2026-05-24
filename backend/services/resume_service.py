@@ -12,6 +12,7 @@ from schemas import ResumeResponse
 from utils import docx_parser
 from services.llm import get_llm_client
 from services.llm.prompts import get_resume_parse_prompt
+from services.llm.prompts.resume_deep_analyzer import get_deep_analyze_prompt
 from config import config
 
 
@@ -115,6 +116,97 @@ class ResumeService:
         db.refresh(resume)
         return resume
 
+    def deep_analyze(
+        self,
+        db: Session,
+        resume_id: str,
+        llm_provider: Optional[str] = None,
+    ) -> dict:
+        """深度解析简历，提取求职画像+推荐岗位"""
+        resume = self.get(db, resume_id)
+        if not resume:
+            raise ValueError(f"简历不存在: {resume_id}")
+
+        # 获取简历文本
+        resume_text = ""
+        if resume.parsed_content and "text" in resume.parsed_content:
+            resume_text = resume.parsed_content["text"]
+        else:
+            parsed = docx_parser.parse(resume.original_file_path)
+            resume_text = parsed["text"]
+            resume.parsed_content = parsed
+
+        # 获取 LLM 客户端
+        client = get_llm_client(llm_provider)
+
+        # 构建 prompt
+        messages = get_deep_analyze_prompt(resume_text)
+
+        # 调用 LLM
+        try:
+            response = client.chat_json(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=6000,
+            )
+        except Exception as e:
+            raise ValueError(f"LLM 调用失败: {str(e)}")
+
+        # 解析结果
+        try:
+            result = json.loads(response)
+        except json.JSONDecodeError:
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                raise ValueError(f"LLM 返回格式错误: {response[:200]}")
+
+        profile = result.get("profile", {})
+        recommended = result.get("recommended_positions", [])
+
+        # 推导搜索关键词
+        search_keywords = []
+        for pos in recommended:
+            if pos.get("title") and pos["title"] not in search_keywords:
+                search_keywords.append(pos["title"])
+
+        # 保存到简历
+        resume.profile = profile
+        resume.recommended_positions = recommended
+        db.commit()
+        db.refresh(resume)
+
+        return {
+            "profile": profile,
+            "recommended_positions": recommended,
+            "search_keywords": search_keywords,
+        }
+
+    def update_profile(
+        self,
+        db: Session,
+        resume_id: str,
+        profile: Optional[dict] = None,
+        recommended_positions: Optional[list] = None,
+        job_preference: Optional[dict] = None,
+    ) -> Resume:
+        """更新求职画像（用户编辑后保存）"""
+        resume = self.get(db, resume_id)
+        if not resume:
+            raise ValueError(f"简历不存在: {resume_id}")
+
+        if profile is not None:
+            resume.profile = profile
+        if recommended_positions is not None:
+            resume.recommended_positions = recommended_positions
+        if job_preference is not None:
+            resume.job_preference = job_preference
+
+        db.commit()
+        db.refresh(resume)
+        return resume
+
     def get(self, db: Session, resume_id: str) -> Optional[Resume]:
         """获取简历"""
         return db.query(Resume).filter(Resume.id == resume_id).first()
@@ -179,6 +271,9 @@ class ResumeService:
             education=resume.education,
             work_experience=resume.work_experience,
             projects=resume.projects,
+            profile=resume.profile,
+            recommended_positions=resume.recommended_positions,
+            job_preference=resume.job_preference,
             created_at=resume.created_at,
             updated_at=resume.updated_at,
         )

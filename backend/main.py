@@ -46,6 +46,7 @@ from api import (
     interview_router,
     llm_router,
     stats_router,
+    collector_router,
 )
 
 app.include_router(company_router, prefix="/api/v1")
@@ -55,6 +56,7 @@ app.include_router(optimization_router, prefix="/api/v1")
 app.include_router(interview_router, prefix="/api/v1")
 app.include_router(llm_router, prefix="/api/v1")
 app.include_router(stats_router, prefix="/api/v1")
+app.include_router(collector_router, prefix="/api/v1")
 
 
 @app.get("/")

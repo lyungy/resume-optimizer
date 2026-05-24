@@ -54,6 +54,8 @@ export const resumeApi = {
     })
   },
   parse: (id, params) => api.post(`/resume/${id}/parse`, null, { params }),
+  deepAnalyze: (id, params) => api.post(`/resume/${id}/deep-analyze`, null, { params }),
+  updateProfile: (id, data) => api.put(`/resume/${id}/profile`, data),
   delete: (id) => api.delete(`/resume/${id}`),
 }
 

@@ -312,8 +312,8 @@ class JDAnalyzer:
                     # 要求5年+ → 友好
                     score += 35
                 elif age_min >= 26:
-                    # 要求3年+ → 中等偏上
-                    score += 28
+                    # 要求3-5年 → 26-28岁，偏年轻，不算友好
+                    score += 18
                 elif age_min >= 25:
                     # 要求2年+ → 中等
                     score += 20

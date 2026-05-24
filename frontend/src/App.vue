@@ -13,6 +13,10 @@
           <el-icon><DataBoard /></el-icon>
           <span>首页</span>
         </el-menu-item>
+        <el-menu-item index="/resume">
+          <el-icon><Files /></el-icon>
+          <span>简历管理</span>
+        </el-menu-item>
         <el-menu-item index="/company">
           <el-icon><OfficeBuilding /></el-icon>
           <span>公司管理</span>
@@ -20,10 +24,6 @@
         <el-menu-item index="/jd">
           <el-icon><Document /></el-icon>
           <span>JD 管理</span>
-        </el-menu-item>
-        <el-menu-item index="/resume">
-          <el-icon><Files /></el-icon>
-          <span>简历管理</span>
         </el-menu-item>
         <el-menu-item index="/optimization">
           <el-icon><MagicStick /></el-icon>
@@ -56,9 +56,9 @@ const activeMenu = computed(() => route.path)
 
 const titleMap = {
   '/': '仪表盘',
+  '/resume': '简历管理',
   '/company': '公司管理',
   '/jd': 'JD 管理',
-  '/resume': '简历管理',
   '/optimization': '简历优化',
   '/interview': '面试攻略',
 }

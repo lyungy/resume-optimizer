@@ -7,20 +7,12 @@ const routes = [
     component: () => import('@/views/Dashboard.vue'),
   },
   {
-    path: '/company',
-    name: 'Company',
-    component: () => import('@/views/Company.vue'),
-  },
-  {
-    path: '/jd',
-    name: 'JD',
-    component: () => import('@/views/JD.vue'),
-  },
-  {
     path: '/resume',
     name: 'Resume',
     component: () => import('@/views/Resume.vue'),
   },
+  {
+    path: '/company',
   {
     path: '/optimization',
     name: 'Optimization',

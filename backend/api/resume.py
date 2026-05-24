@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from models.database import get_db
 from schemas import ResumeResponse, ResumeListResponse
+from schemas.resume import DeepAnalyzeResponse, ProfileUpdateRequest
 from services import resume_service
 
 router = APIRouter(prefix="/resume", tags=["简历管理"])
@@ -88,3 +89,40 @@ def delete_resume(resume_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="简历不存在")
 
     return {"message": "删除成功"}
+
+
+@router.post("/{resume_id}/deep-analyze", response_model=DeepAnalyzeResponse)
+def deep_analyze_resume(
+    resume_id: str,
+    llm_provider: Optional[str] = Query(None, description="LLM Provider"),
+    db: Session = Depends(get_db),
+):
+    """深度解析简历，提取求职画像+推荐岗位"""
+    try:
+        result = resume_service.deep_analyze(db, resume_id, llm_provider)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"深度解析失败: {str(e)}")
+
+
+@router.put("/{resume_id}/profile", response_model=ResumeResponse)
+def update_resume_profile(
+    resume_id: str,
+    data: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """更新求职画像（用户编辑后保存）"""
+    try:
+        resume = resume_service.update_profile(
+            db, resume_id,
+            profile=data.profile,
+            recommended_positions=data.recommended_positions,
+            job_preference=data.job_preference,
+        )
+        return resume_service.to_response(resume)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
