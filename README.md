@@ -11,6 +11,7 @@
 | **简历管理** | DOCX 上传、LLM 增强解析（技能、工作年限、工作经历提取） |
 | **简历优化** | 选择 JD + 简历 → LLM 优化 → 匹配度分析、关键词覆盖、优化建议 |
 | **面试攻略** | 知识点清单、高频面试题、答题模板、准备策略、DOCX 导出 |
+| **岗位采集** | Boss直聘自动搜索、大龄友好度分析、自动导入系统 |
 | **LLM 配置** | 从 OpenClaw 自动导入，支持 MiMo / DeepSeek 切换 |
 
 ## 技术栈
@@ -24,25 +25,42 @@
 
 ## 快速开始
 
-### 1. 安装后端依赖
+### 1. 安装依赖
 
 ```bash
-cd backend
+cd resume-optimizer
 uv venv .venv --python 3.12
-uv pip install -r requirements.txt --python .venv/bin/python
+uv pip install -r backend/requirements.txt --python .venv/bin/python
 ```
+
+### 2. 激活虚拟环境
+
+```bash
+source .venv/bin/activate
+```
+
+激活后可直接使用 `python`、`uvicorn` 等命令，无需加 `.venv/bin/` 前缀：
+
+```bash
+# 后端
+cd backend && uvicorn main:app --reload --port 8000
+
+# 采集模块
+python -m collector search -k "架构师" -c 上海
+```
+
+退出虚拟环境：`deactivate`
 
 ### 2. 配置 LLM
 
 从 OpenClaw 导入配置（推荐）：
 ```bash
-cd backend
-.venv/bin/python scripts/import_llm_config.py
+.venv/bin/python backend/scripts/import_llm_config.py
 ```
 
 或手动配置：
 ```bash
-cp config.yaml.example config.yaml
+cp backend/config.yaml.example backend/config.yaml
 # 编辑 config.yaml，填入 API Key
 ```
 
@@ -54,13 +72,25 @@ cp config.yaml.example config.yaml
 
 # 方式二：分别启动
 # 后端
-cd backend && .venv/bin/uvicorn main:app --reload --port 8000
+.venv/bin/uvicorn backend.main:app --reload --port 8000
 
 # 前端
 cd frontend && npm run dev
 ```
 
-### 4. 访问
+### 4. 岗位采集（可选）
+
+```bash
+# 搜索岗位
+.venv/bin/python -m collector search -k "架构师" -c 上海
+
+# 搜索并自动导入
+.venv/bin/python -m collector search -k "架构师" -c 上海 --import
+```
+
+详见 `collector/config.yaml` 和 `collector/README.md`。
+
+### 5. 访问
 
 - **前端**: http://localhost:5173
 - **API 文档**: http://localhost:8000/docs
@@ -69,6 +99,7 @@ cd frontend && npm run dev
 
 ```
 resume-optimizer/
+├── .venv/                      # Python 虚拟环境（共用）
 ├── backend/                    # FastAPI 后端
 │   ├── api/                    # API 路由层
 │   ├── services/               # 业务逻辑层
@@ -79,6 +110,14 @@ resume-optimizer/
 │   ├── main.py                 # FastAPI 入口
 │   ├── config.py               # 配置管理
 │   └── config.yaml             # LLM 配置
+├── collector/                  # 岗位采集模块
+│   ├── __main__.py             # CLI 入口
+│   ├── browser.py              # 浏览器控制器
+│   ├── analyzer.py             # JD 友好度分析
+│   ├── importer.py             # 系统导入器
+│   ├── platforms/              # 招聘平台适配器
+│   ├── config.yaml             # 采集配置
+│   └── data/                   # 运行时数据
 ├── frontend/                   # Vue 3 前端
 │   └── src/
 │       ├── views/              # 页面组件

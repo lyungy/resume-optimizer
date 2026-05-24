@@ -329,8 +329,7 @@ llm:
 
 ```bash
 # 从 OpenClaw 自动导入 LLM 配置
-cd backend
-.venv/bin/python scripts/import_llm_config.py
+.venv/bin/python backend/scripts/import_llm_config.py
 ```
 
 读取 `~/.openclaw/openclaw.json` 中的 `models.providers` 配置，写入 `config.yaml`。
@@ -573,11 +572,13 @@ export const statsApi = { ... }
 ### 10.1 开发环境
 
 ```bash
-# 后端
-cd backend
+# 安装依赖
+cd resume-optimizer
 uv venv .venv --python 3.12
-uv pip install -r requirements.txt --python .venv/bin/python
-.venv/bin/uvicorn main:app --reload --port 8000
+uv pip install -r backend/requirements.txt --python .venv/bin/python
+
+# 后端
+.venv/bin/uvicorn backend.main:app --reload --port 8000
 
 # 前端
 cd frontend
@@ -589,8 +590,7 @@ npm run dev
 
 ```bash
 # 后端
-cd backend
-.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 # 前端
 cd frontend

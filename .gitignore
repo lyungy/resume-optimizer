@@ -33,6 +33,7 @@ build/
 # Uploads & Generated Files
 data/
 backend/data/
+!collector/data/.gitkeep
 
 # Node
 node_modules/

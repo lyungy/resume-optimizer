@@ -4,20 +4,20 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 
 echo "🚀 启动简历优化系统..."
 
 # 检查并导入 LLM 配置
 if [ ! -f "$PROJECT_DIR/backend/config.yaml" ]; then
   echo "📥 导入 LLM 配置..."
-  cd "$PROJECT_DIR/backend"
-  .venv/bin/python scripts/import_llm_config.py
+  $VENV_PYTHON "$PROJECT_DIR/backend/scripts/import_llm_config.py"
 fi
 
 # 启动后端
 echo "🔧 启动后端服务 (端口 8000)..."
 cd "$PROJECT_DIR/backend"
-.venv/bin/uvicorn main:app --reload --port 8000 &
+"$PROJECT_DIR/.venv/bin/uvicorn" main:app --reload --port 8000 &
 BACKEND_PID=$!
 
 # 等待后端启动

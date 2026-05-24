@@ -1,0 +1,7 @@
+# Collector 独立运行依赖
+# 如果使用项目 venv，依赖已在 backend/requirements.txt 中统一管理
+
+httpx>=0.27.0
+patchright>=1.40.0
+playwright>=1.40.0
+pyyaml>=6.0
