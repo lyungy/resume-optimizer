@@ -39,6 +39,20 @@
       <el-table :data="tableData" v-loading="loading" border>
         <el-table-column prop="title" label="职位名称" min-width="150" />
         <el-table-column prop="company_name" label="公司" width="120" />
+        <el-table-column prop="source_url" label="来源" width="100">
+          <template #default="{ row }">
+            <el-link
+              v-if="row.source_url"
+              :href="row.source_url"
+              target="_blank"
+              type="primary"
+              :underline="false"
+            >
+              查看
+            </el-link>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="difficulty_level" label="难度" width="80">
           <template #default="{ row }">
             <el-tag v-if="row.difficulty_level" size="small">
@@ -134,6 +148,17 @@
       <el-descriptions :column="2" border>
         <el-descriptions-item label="职位名称">{{ detailData.title }}</el-descriptions-item>
         <el-descriptions-item label="公司">{{ detailData.company_name }}</el-descriptions-item>
+        <el-descriptions-item label="来源" :span="2">
+          <el-link
+            v-if="detailData.source_url"
+            :href="detailData.source_url"
+            target="_blank"
+            type="primary"
+          >
+            {{ detailData.source_url }}
+          </el-link>
+          <span v-else>-</span>
+        </el-descriptions-item>
         <el-descriptions-item label="工作年限">{{ detailData.experience_years || '-' }}</el-descriptions-item>
         <el-descriptions-item label="难度级别">{{ detailData.difficulty_level || '-' }}</el-descriptions-item>
         <el-descriptions-item label="大龄友好">

@@ -1,23 +1,168 @@
 """
-DOCX 文件生成工具
+DOCX 文件生成工具 - 精美模板版
+简历：专业简洁风，ATS友好
+面试攻略：结构清晰，视觉层次分明
 """
 from pathlib import Path
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.style import WD_STYLE_TYPE
+from docx.shared import Pt, Inches, RGBColor, Cm, Emu
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import parse_xml
 from datetime import datetime
 
 
+# ============================================================
+# 配色方案
+# ============================================================
+class Colors:
+    """专业配色"""
+    PRIMARY = RGBColor(0x2B, 0x57, 0x9A)       # 主色 - 深蓝
+    PRIMARY_LIGHT = RGBColor(0x3A, 0x7C, 0xBD)  # 主色浅
+    ACCENT = RGBColor(0x1A, 0x8C, 0x6B)         # 强调色 - 墨绿
+    ACCENT_LIGHT = RGBColor(0xE8, 0xF5, 0xE9)   # 强调色底
+    TEXT_PRIMARY = RGBColor(0x2D, 0x2D, 0x2D)    # 主文字 - 近黑
+    TEXT_SECONDARY = RGBColor(0x66, 0x66, 0x66)  # 次文字 - 灰
+    TEXT_LIGHT = RGBColor(0x99, 0x99, 0x99)      # 浅文字
+    DIVIDER = RGBColor(0xDD, 0xDD, 0xDD)         # 分割线
+    BG_LIGHT = RGBColor(0xF5, 0xF7, 0xFA)        # 浅底色
+    WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+    HIGH = RGBColor(0xE8, 0x4D, 0x3D)            # 高优先级 - 红
+    MEDIUM = RGBColor(0xF5, 0xA6, 0x23)          # 中优先级 - 橙
+    LOW = RGBColor(0x4C, 0xAF, 0x50)             # 低优先级 - 绿
+
+
+# ============================================================
+# 通用工具函数
+# ============================================================
+def _set_cell_shading(cell, color_hex: str):
+    """设置单元格背景色"""
+    shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{color_hex}"/>')
+    cell._tc.get_or_add_tcPr().append(shading)
+
+
+def _add_bottom_border(paragraph, color: str = "2B579A", width: int = 6):
+    """给段落添加下边框"""
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = parse_xml(
+        f'<w:pBdr {nsdecls("w")}>'
+        f'  <w:bottom w:val="single" w:sz="{width}" w:space="1" w:color="{color}"/>'
+        f'</w:pBdr>'
+    )
+    pPr.append(pBdr)
+
+
+def _add_top_border(paragraph, color: str = "2B579A", width: int = 4):
+    """给段落添加上边框"""
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = parse_xml(
+        f'<w:pBdr {nsdecls("w")}>'
+        f'  <w:top w:val="single" w:sz="{width}" w:space="1" w:color="{color}"/>'
+        f'</w:pBdr>'
+    )
+    pPr.append(pBdr)
+
+
+def _set_paragraph_spacing(paragraph, before: int = 0, after: int = 0, line: float = 1.15):
+    """设置段落间距"""
+    pf = paragraph.paragraph_format
+    pf.space_before = Pt(before)
+    pf.space_after = Pt(after)
+    pf.line_spacing = line
+
+
+def _add_run(paragraph, text: str, bold: bool = False, size: int = 10,
+             color: RGBColor = None, font_name: str = None):
+    """添加格式化文本"""
+    run = paragraph.add_run(text)
+    run.bold = bold
+    run.font.size = Pt(size)
+    if color:
+        run.font.color.rgb = color
+    if font_name:
+        run.font.name = font_name
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+    return run
+
+
+def _set_run_font(run, name: str = "微软雅黑", size: int = 10,
+                  bold: bool = False, color: RGBColor = None):
+    """设置 run 字体"""
+    run.font.name = name
+    run.font.size = Pt(size)
+    run.bold = bold
+    if color:
+        run.font.color.rgb = color
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.find(qn('w:rFonts'))
+    if rFonts is None:
+        rFonts = parse_xml(f'<w:rFonts {nsdecls("w")}/>')
+        rPr.insert(0, rFonts)
+    rFonts.set(qn('w:eastAsia'), name)
+
+
+def _add_section_header(doc, title: str, color: str = "2B579A"):
+    """添加带装饰的章节标题"""
+    # 空行
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, before=6, after=0)
+
+    # 标题行
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, before=0, after=4)
+    _add_bottom_border(p, color, width=8)
+    run = p.add_run(f"  {title}")
+    _set_run_font(run, "微软雅黑", 13, bold=True, color=Colors.PRIMARY)
+
+    return p
+
+
+def _add_subsection(doc, title: str):
+    """添加子标题"""
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, before=6, after=2)
+    run = p.add_run(f"▸ {title}")
+    _set_run_font(run, "微软雅黑", 11, bold=True, color=Colors.TEXT_PRIMARY)
+    return p
+
+
+def _add_bullet(doc, text: str, indent_level: int = 0):
+    """添加美化项目符号"""
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, before=1, after=1, line=1.3)
+    pf = p.paragraph_format
+    pf.left_indent = Inches(0.3 + indent_level * 0.2)
+    pf.first_line_indent = Inches(-0.15)
+
+    run = p.add_run("● ")
+    _set_run_font(run, "微软雅黑", 7, color=Colors.PRIMARY_LIGHT)
+
+    run = p.add_run(text)
+    _set_run_font(run, "微软雅黑", 10, color=Colors.TEXT_PRIMARY)
+    return p
+
+
+def _add_tag_paragraph(doc, tags: list[str]):
+    """添加标签式展示（技能标签）"""
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, before=2, after=4)
+
+    for i, tag in enumerate(tags):
+        if i > 0:
+            run = p.add_run("  ·  ")
+            _set_run_font(run, "微软雅黑", 9, color=Colors.DIVIDER)
+        run = p.add_run(tag)
+        _set_run_font(run, "微软雅黑", 9, color=Colors.PRIMARY)
+    return p
+
+
+# ============================================================
+# 简历生成
+# ============================================================
 class DocxWriter:
     """DOCX 文件生成器"""
-
-    def __init__(self):
-        self._setup_styles()
-
-    def _setup_styles(self):
-        """设置文档样式"""
-        pass
 
     def create_resume(
         self,
@@ -26,82 +171,153 @@ class DocxWriter:
         original_doc_path: str = None,
     ) -> str:
         """
-        生成优化后的简历 DOCX 文件
-        
-        参数:
-            content: 优化后的内容
-            output_path: 输出文件路径
-            original_doc_path: 原始简历路径（用于保留格式）
-        
-        返回:
-            输出文件路径
+        生成优化后的精美简历
         """
         doc = Document()
 
-        # 设置文档样式
+        # 设置页面边距
+        for section in doc.sections:
+            section.top_margin = Cm(1.5)
+            section.bottom_margin = Cm(1.5)
+            section.left_margin = Cm(2)
+            section.right_margin = Cm(2)
+
+        # 设置默认字体
         style = doc.styles["Normal"]
         style.font.name = "微软雅黑"
-        style.font.size = Pt(10.5)
+        style.font.size = Pt(10)
+        style.font.color.rgb = Colors.TEXT_PRIMARY
+        style.paragraph_format.line_spacing = 1.15
 
-        # 添加标题（个人姓名）
-        if "name" in content:
-            heading = doc.add_heading(content["name"], level=1)
-            heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # ---- 姓名标题 ----
+        name = content.get("name", "")
+        if name:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_spacing(p, before=12, after=2)
+            run = p.add_run(name)
+            _set_run_font(run, "微软雅黑", 22, bold=True, color=Colors.PRIMARY)
 
-        # 添加个人总结
-        if "summary" in content.get("optimized_sections", {}):
-            doc.add_heading("个人总结", level=2)
-            doc.add_paragraph(content["optimized_sections"]["summary"])
+            # 装饰线
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_spacing(p, before=0, after=8)
+            run = p.add_run("━" * 30)
+            _set_run_font(run, "微软雅黑", 8, color=Colors.DIVIDER)
 
-        # 添加技能
-        if "skills" in content.get("optimized_sections", {}):
-            doc.add_heading("专业技能", level=2)
-            skills = content["optimized_sections"]["skills"]
-            doc.add_paragraph("、".join(skills))
+        # ---- 匹配度评分 ----
+        match_score = content.get("match_score")
+        if match_score:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_spacing(p, before=0, after=6)
 
-        # 添加工作经历
-        if "experience" in content.get("optimized_sections", {}):
-            doc.add_heading("工作经历", level=2)
-            for exp in content["optimized_sections"]["experience"]:
-                # 公司和职位
+            score_color = Colors.ACCENT if match_score >= 70 else Colors.MEDIUM if match_score >= 50 else Colors.HIGH
+            run = p.add_run(f"JD 匹配度：{match_score}分")
+            _set_run_font(run, "微软雅黑", 10, bold=True, color=score_color)
+
+        optimized = content.get("optimized_sections", {})
+
+        # ---- 个人总结 ----
+        summary = optimized.get("summary", "")
+        if summary:
+            _add_section_header(doc, "个人总结")
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=2, after=4, line=1.4)
+            pf = p.paragraph_format
+            pf.left_indent = Inches(0.1)
+            run = p.add_run(summary)
+            _set_run_font(run, "微软雅黑", 10, color=Colors.TEXT_PRIMARY)
+
+        # ---- 专业技能 ----
+        skills = optimized.get("skills", [])
+        if skills:
+            _add_section_header(doc, "专业技能")
+            _add_tag_paragraph(doc, skills)
+
+        # ---- 工作经历 ----
+        experience = optimized.get("experience", [])
+        if experience:
+            _add_section_header(doc, "工作经历")
+            for exp in experience:
                 p = doc.add_paragraph()
-                run = p.add_run(f"{exp.get('company', '')} - {exp.get('title', '')}")
-                run.bold = True
-                if "period" in exp:
-                    p.add_run(f"  ({exp['period']})")
+                _set_paragraph_spacing(p, before=6, after=2)
+
+                # 公司名
+                company = exp.get("company", "")
+                title = exp.get("title", "")
+                period = exp.get("period", "")
+
+                run = p.add_run(company)
+                _set_run_font(run, "微软雅黑", 11, bold=True, color=Colors.TEXT_PRIMARY)
+
+                if title:
+                    run = p.add_run(f"  |  {title}")
+                    _set_run_font(run, "微软雅黑", 10, color=Colors.TEXT_SECONDARY)
+
+                if period:
+                    run = p.add_run(f"  ({period})")
+                    _set_run_font(run, "微软雅黑", 9, color=Colors.TEXT_LIGHT)
 
                 # 亮点
                 for highlight in exp.get("highlights", []):
-                    doc.add_paragraph(highlight, style="List Bullet")
+                    _add_bullet(doc, highlight)
 
-        # 添加项目经历
-        if "projects" in content.get("optimized_sections", {}):
-            doc.add_heading("项目经历", level=2)
-            for proj in content["optimized_sections"]["projects"]:
-                # 项目名
+        # ---- 项目经历 ----
+        projects = optimized.get("projects", [])
+        if projects:
+            _add_section_header(doc, "项目经历")
+            for proj in projects:
                 p = doc.add_paragraph()
-                run = p.add_run(proj.get("name", ""))
-                run.bold = True
-                if "role" in proj:
-                    p.add_run(f"  |  {proj['role']}")
+                _set_paragraph_spacing(p, before=6, after=2)
 
-                # 亮点
+                name = proj.get("name", "")
+                role = proj.get("role", "")
+
+                run = p.add_run(name)
+                _set_run_font(run, "微软雅黑", 11, bold=True, color=Colors.TEXT_PRIMARY)
+
+                if role:
+                    run = p.add_run(f"  |  {role}")
+                    _set_run_font(run, "微软雅黑", 10, color=Colors.TEXT_SECONDARY)
+
                 for highlight in proj.get("highlights", []):
-                    doc.add_paragraph(highlight, style="List Bullet")
+                    _add_bullet(doc, highlight)
 
-        # 添加优化建议（作为备注）
-        if "suggestions" in content and content["suggestions"]:
-            doc.add_heading("优化建议", level=2)
-            for suggestion in content["suggestions"]:
-                doc.add_paragraph(suggestion, style="List Bullet")
+        # ---- 优化建议 ----
+        suggestions = content.get("suggestions", [])
+        if suggestions:
+            _add_section_header(doc, "优化建议", color="1A8C6B")
+            for suggestion in suggestions:
+                _add_bullet(doc, suggestion)
 
-        # 保存文档
+        # ---- ATS 建议 ----
+        ats_tips = content.get("ats_tips", [])
+        if ats_tips:
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=4, after=2)
+            run = p.add_run("ATS 通过率提升建议")
+            _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.ACCENT)
+
+            for tip in ats_tips:
+                _add_bullet(doc, tip)
+
+        # ---- 页脚 ----
+        p = doc.add_paragraph()
+        _set_paragraph_spacing(p, before=12, after=0)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(f"由简历优化系统生成 · {datetime.now().strftime('%Y-%m-%d')}")
+        _set_run_font(run, "微软雅黑", 8, color=Colors.TEXT_LIGHT)
+
+        # 保存
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output))
-
         return str(output)
 
+    # ============================================================
+    # 面试攻略生成
+    # ============================================================
     def create_interview_guide(
         self,
         content: dict,
@@ -110,125 +326,322 @@ class DocxWriter:
         company_name: str = "",
     ) -> str:
         """
-        生成面试攻略 DOCX 文件
-        
-        参数:
-            content: 面试攻略内容
-            output_path: 输出文件路径
-            jd_title: 职位名称
-            company_name: 公司名称
-        
-        返回:
-            输出文件路径
+        生成精美的面试攻略
         """
         doc = Document()
 
-        # 设置文档样式
+        # 页面设置
+        for section in doc.sections:
+            section.top_margin = Cm(2)
+            section.bottom_margin = Cm(2)
+            section.left_margin = Cm(2.5)
+            section.right_margin = Cm(2.5)
+
+        # 默认字体
         style = doc.styles["Normal"]
         style.font.name = "微软雅黑"
-        style.font.size = Pt(10.5)
+        style.font.size = Pt(10)
+        style.font.color.rgb = Colors.TEXT_PRIMARY
 
-        # 标题
-        title = f"面试攻略 - {company_name} {jd_title}" if company_name else "面试攻略"
-        heading = doc.add_heading(title, level=1)
-        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # ---- 封面标题 ----
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_paragraph_spacing(p, before=40, after=6)
+        run = p.add_run("面 试 攻 略")
+        _set_run_font(run, "微软雅黑", 28, bold=True, color=Colors.PRIMARY)
+
+        if company_name or jd_title:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_spacing(p, before=4, after=2)
+            subtitle = f"{company_name}  ·  {jd_title}" if company_name and jd_title else company_name or jd_title
+            run = p.add_run(subtitle)
+            _set_run_font(run, "微软雅黑", 14, color=Colors.TEXT_SECONDARY)
+
+        # 装饰线
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_paragraph_spacing(p, before=8, after=4)
+        run = p.add_run("━" * 40)
+        _set_run_font(run, "微软雅黑", 8, color=Colors.DIVIDER)
 
         # 生成时间
-        doc.add_paragraph(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        doc.add_paragraph("")
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_paragraph_spacing(p, before=2, after=20)
+        run = p.add_run(f"生成时间：{datetime.now().strftime('%Y年%m月%d日 %H:%M')}")
+        _set_run_font(run, "微软雅黑", 9, color=Colors.TEXT_LIGHT)
 
-        # 知识点清单
-        if "knowledge_points" in content:
-            doc.add_heading("知识点清单", level=2)
-            for kp in content["knowledge_points"]:
-                doc.add_heading(kp.get("category", "未分类"), level=3)
+        # ---- 知识点清单 ----
+        knowledge_points = content.get("knowledge_points", [])
+        if knowledge_points:
+            _add_section_header(doc, "📚 知识点清单")
+
+            for kp in knowledge_points:
+                category = kp.get("category", "未分类")
                 priority = kp.get("priority", "medium")
-                doc.add_paragraph(f"优先级：{priority} | 预计准备时间：{kp.get('estimated_prep_hours', 0)}小时")
+                hours = kp.get("estimated_prep_hours", 0)
+
+                # 优先级颜色
+                pri_color = {"high": Colors.HIGH, "medium": Colors.MEDIUM, "low": Colors.LOW}.get(priority, Colors.MEDIUM)
+                pri_label = {"high": "高", "medium": "中", "low": "低"}.get(priority, "中")
+
+                _add_subsection(doc, category)
+
+                # 优先级和时间
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=1, after=2)
+                pf = p.paragraph_format
+                pf.left_indent = Inches(0.2)
+
+                run = p.add_run(f"优先级：{pri_label}  ")
+                _set_run_font(run, "微软雅黑", 9, bold=True, color=pri_color)
+
+                run = p.add_run(f"准备时间：{hours}小时")
+                _set_run_font(run, "微软雅黑", 9, color=Colors.TEXT_SECONDARY)
+
+                # 知识点列表
                 for point in kp.get("points", []):
-                    doc.add_paragraph(point, style="List Bullet")
-                if "study_resources" in kp:
-                    doc.add_paragraph("推荐学习方向：")
-                    for resource in kp["study_resources"]:
-                        doc.add_paragraph(resource, style="List Bullet 2")
+                    _add_bullet(doc, point, indent_level=1)
 
-        # 高频面试题
-        if "high_frequency_questions" in content:
-            doc.add_heading("高频面试题", level=2)
-            for i, q in enumerate(content["high_frequency_questions"], 1):
-                doc.add_heading(f"Q{i}: {q.get('question', '')}", level=3)
-                doc.add_paragraph(f"分类：{q.get('category', '')} | 难度：{q.get('difficulty', '')}")
+                # 学习资源
+                resources = kp.get("study_resources", [])
+                if resources:
+                    p = doc.add_paragraph()
+                    _set_paragraph_spacing(p, before=2, after=1)
+                    pf = p.paragraph_format
+                    pf.left_indent = Inches(0.2)
+                    run = p.add_run("📖 学习方向：")
+                    _set_run_font(run, "微软雅黑", 9, bold=True, color=Colors.ACCENT)
 
-                if "answer_template" in q:
-                    doc.add_paragraph("答题模板：")
-                    doc.add_paragraph(q["answer_template"])
+                    for resource in resources:
+                        _add_bullet(doc, resource, indent_level=1)
 
-                if "key_points" in q:
-                    doc.add_paragraph("回答要点：")
-                    for point in q["key_points"]:
-                        doc.add_paragraph(point, style="List Bullet")
+        # ---- 高频面试题 ----
+        questions = content.get("high_frequency_questions", [])
+        if questions:
+            _add_section_header(doc, "🎯 高频面试题")
 
-                if "common_mistakes" in q:
-                    doc.add_paragraph("常见错误：")
-                    for mistake in q["common_mistakes"]:
-                        doc.add_paragraph(mistake, style="List Bullet")
+            for i, q in enumerate(questions, 1):
+                question = q.get("question", "")
+                category = q.get("category", "")
+                difficulty = q.get("difficulty", "")
 
-        # 准备策略
-        if "preparation_strategy" in content:
-            strategy = content["preparation_strategy"]
-            doc.add_heading("准备策略", level=2)
-            doc.add_paragraph(f"建议准备天数：{strategy.get('total_days', 7)} 天")
+                # 题目
+                _add_subsection(doc, f"Q{i}: {question}")
 
-            if "daily_plan" in strategy:
-                doc.add_heading("每日计划", level=3)
-                for day_plan in strategy["daily_plan"]:
-                    doc.add_paragraph(
-                        f"第{day_plan.get('day', '')}天 - {day_plan.get('focus', '')} "
-                        f"(预计 {day_plan.get('hours', 0)} 小时)"
-                    )
-                    for task in day_plan.get("tasks", []):
-                        doc.add_paragraph(task, style="List Bullet")
+                # 元信息
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=1, after=2)
+                pf = p.paragraph_format
+                pf.left_indent = Inches(0.2)
 
-            if "tips" in strategy:
-                doc.add_heading("面试技巧", level=3)
-                for tip in strategy["tips"]:
-                    doc.add_paragraph(tip, style="List Bullet")
+                diff_color = {"hard": Colors.HIGH, "medium": Colors.MEDIUM, "easy": Colors.LOW}.get(difficulty, Colors.MEDIUM)
+                diff_label = {"hard": "难", "medium": "中", "easy": "易"}.get(difficulty, "中")
 
-        # 公司调研
-        if "company_research" in content:
-            cr = content["company_research"]
-            doc.add_heading("公司调研", level=2)
+                run = p.add_run(f"分类：{category}  ")
+                _set_run_font(run, "微软雅黑", 9, color=Colors.TEXT_SECONDARY)
+                run = p.add_run(f"难度：{diff_label}")
+                _set_run_font(run, "微软雅黑", 9, bold=True, color=diff_color)
 
-            if "what_to_prepare" in cr:
-                doc.add_paragraph("需要了解的信息：")
-                for item in cr["what_to_prepare"]:
-                    doc.add_paragraph(item, style="List Bullet")
+                # 答题模板
+                answer = q.get("answer_template", "")
+                if answer:
+                    p = doc.add_paragraph()
+                    _set_paragraph_spacing(p, before=3, after=1)
+                    pf = p.paragraph_format
+                    pf.left_indent = Inches(0.2)
+                    run = p.add_run("💡 答题思路：")
+                    _set_run_font(run, "微软雅黑", 9, bold=True, color=Colors.PRIMARY)
 
-            if "questions_to_ask" in cr:
-                doc.add_paragraph("可以反问面试官的问题：")
-                for q in cr["questions_to_ask"]:
-                    doc.add_paragraph(q, style="List Bullet")
+                    # 答案内容 - 用浅色背景表格模拟卡片
+                    table = doc.add_table(rows=1, cols=1)
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    cell = table.cell(0, 0)
+                    cell.text = ""
+                    p = cell.paragraphs[0]
+                    run = p.add_run(answer)
+                    _set_run_font(run, "微软雅黑", 9.5, color=Colors.TEXT_PRIMARY)
+                    _set_cell_shading(cell, "F5F7FA")
 
-            if "red_flags" in cr:
-                doc.add_paragraph("需要注意的信号：")
-                for flag in cr["red_flags"]:
-                    doc.add_paragraph(flag, style="List Bullet")
+                    # 设置表格宽度
+                    tbl = table._tbl
+                    tblPr = tbl.tblPr if tbl.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+                    tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="9000" w:type="dxa"/>')
+                    tblPr.append(tblW)
 
-        # 薪资谈判
-        if "salary_negotiation" in content:
-            sn = content["salary_negotiation"]
-            doc.add_heading("薪资谈判参考", level=2)
-            if "market_range" in sn:
-                doc.add_paragraph(f"市场薪资范围：{sn['market_range']}")
-            if "negotiation_tips" in sn:
-                for tip in sn["negotiation_tips"]:
-                    doc.add_paragraph(tip, style="List Bullet")
+                # 回答要点
+                key_points = q.get("key_points", [])
+                if key_points:
+                    p = doc.add_paragraph()
+                    _set_paragraph_spacing(p, before=3, after=1)
+                    pf = p.paragraph_format
+                    pf.left_indent = Inches(0.2)
+                    run = p.add_run("✅ 回答要点：")
+                    _set_run_font(run, "微软雅黑", 9, bold=True, color=Colors.ACCENT)
 
-        # 保存文档
+                    for point in key_points:
+                        _add_bullet(doc, point, indent_level=1)
+
+                # 常见错误
+                mistakes = q.get("common_mistakes", [])
+                if mistakes:
+                    p = doc.add_paragraph()
+                    _set_paragraph_spacing(p, before=3, after=1)
+                    pf = p.paragraph_format
+                    pf.left_indent = Inches(0.2)
+                    run = p.add_run("⚠️ 常见错误：")
+                    _set_run_font(run, "微软雅黑", 9, bold=True, color=Colors.HIGH)
+
+                    for mistake in mistakes:
+                        _add_bullet(doc, mistake, indent_level=1)
+
+        # ---- 准备策略 ----
+        strategy = content.get("preparation_strategy", {})
+        if strategy:
+            _add_section_header(doc, "📅 准备策略", color="1A8C6B")
+
+            total_days = strategy.get("total_days", 7)
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=2, after=4)
+            run = p.add_run(f"建议准备周期：{total_days} 天")
+            _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.TEXT_PRIMARY)
+
+            # 每日计划 - 用表格展示
+            daily_plan = strategy.get("daily_plan", [])
+            if daily_plan:
+                _add_subsection(doc, "每日计划")
+
+                table = doc.add_table(rows=1, cols=4)
+                table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+                # 表头
+                headers = ["天数", "主题", "时长", "任务"]
+                header_cells = table.rows[0].cells
+                for i, h in enumerate(headers):
+                    header_cells[i].text = ""
+                    p = header_cells[i].paragraphs[0]
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run(h)
+                    _set_run_font(run, "微软雅黑", 9, bold=True, color=Colors.WHITE)
+                    _set_cell_shading(header_cells[i], "2B579A")
+
+                # 数据行
+                for day in daily_plan:
+                    row = table.add_row()
+                    cells = row.cells
+
+                    day_num = str(day.get("day", ""))
+                    focus = day.get("focus", "")
+                    hours = f"{day.get('hours', 0)}h"
+                    tasks = "、".join(day.get("tasks", []))
+
+                    for j, val in enumerate([day_num, focus, hours, tasks]):
+                        cells[j].text = ""
+                        p = cells[j].paragraphs[0]
+                        run = p.add_run(val)
+                        _set_run_font(run, "微软雅黑", 9, color=Colors.TEXT_PRIMARY)
+
+                # 设置表格样式
+                self._style_table(table)
+
+            # 面试技巧
+            tips = strategy.get("tips", [])
+            if tips:
+                _add_subsection(doc, "面试技巧")
+                for tip in tips:
+                    _add_bullet(doc, tip)
+
+        # ---- 公司调研 ----
+        company_research = content.get("company_research", {})
+        if company_research:
+            _add_section_header(doc, "🏢 公司调研")
+
+            what_to_prepare = company_research.get("what_to_prepare", [])
+            if what_to_prepare:
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=2, after=2)
+                run = p.add_run("需要了解的信息：")
+                _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.TEXT_PRIMARY)
+
+                for item in what_to_prepare:
+                    _add_bullet(doc, item)
+
+            questions_to_ask = company_research.get("questions_to_ask", [])
+            if questions_to_ask:
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=4, after=2)
+                run = p.add_run("🎤 可以反问面试官：")
+                _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.PRIMARY)
+
+                for q in questions_to_ask:
+                    _add_bullet(doc, q)
+
+            red_flags = company_research.get("red_flags", [])
+            if red_flags:
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=4, after=2)
+                run = p.add_run("🚩 注意信号：")
+                _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.HIGH)
+
+                for flag in red_flags:
+                    _add_bullet(doc, flag)
+
+        # ---- 薪资谈判 ----
+        salary = content.get("salary_negotiation", {})
+        if salary:
+            _add_section_header(doc, "💰 薪资谈判参考")
+
+            market_range = salary.get("market_range", "")
+            if market_range:
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=2, after=2)
+                run = p.add_run(f"市场薪资范围：{market_range}")
+                _set_run_font(run, "微软雅黑", 10, bold=True, color=Colors.ACCENT)
+
+            neg_tips = salary.get("negotiation_tips", [])
+            if neg_tips:
+                for tip in neg_tips:
+                    _add_bullet(doc, tip)
+
+        # ---- 页脚 ----
+        p = doc.add_paragraph()
+        _set_paragraph_spacing(p, before=20, after=0)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(f"面试攻略 · {company_name} · {datetime.now().strftime('%Y-%m-%d')}")
+        _set_run_font(run, "微软雅黑", 8, color=Colors.TEXT_LIGHT)
+
+        # 保存
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output))
-
         return str(output)
+
+    def _style_table(self, table):
+        """美化表格"""
+        # 设置表格边框
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+
+        borders = parse_xml(
+            f'<w:tblBorders {nsdecls("w")}>'
+            f'  <w:top w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'  <w:left w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'  <w:bottom w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'  <w:right w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'  <w:insideH w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'  <w:insideV w:val="single" w:sz="4" w:space="0" w:color="DDDDDD"/>'
+            f'</w:tblBorders>'
+        )
+        tblPr.append(borders)
+
+        # 交替行颜色
+        for i, row in enumerate(table.rows):
+            if i == 0:
+                continue
+            if i % 2 == 0:
+                for cell in row.cells:
+                    _set_cell_shading(cell, "F5F7FA")
 
 
 # 全局实例

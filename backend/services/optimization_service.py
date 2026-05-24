@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from models import Optimization, JobDescription, Resume
 from schemas import OptimizationCreate, OptimizationResponse
 from services.llm import get_llm_client
+from services.llm.retry import call_llm_with_retry, parse_json_response
 from services.llm.prompts import get_resume_optimize_prompt
 from utils import docx_writer
 from config import config
@@ -121,24 +122,17 @@ class OptimizationService:
                 resume_text=resume_text,
             )
 
-            # 调用 LLM
-            response = client.chat_json(
+            # 调用 LLM（带重试）
+            response = call_llm_with_retry(
+                client=client,
                 messages=messages,
                 model=optimization.llm_model,
-                temperature=0.5,
-                max_tokens=4000,
             )
 
-            # 解析结果
-            try:
-                result = json.loads(response)
-            except json.JSONDecodeError:
-                import re
-                json_match = re.search(r'\{.*\}', response, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group())
-                else:
-                    raise ValueError(f"LLM 返回格式错误")
+            # 解析结果（带容错）
+            result = parse_json_response(response)
+            if not result:
+                raise ValueError("LLM 返回格式错误")
 
             # 更新优化结果
             optimization.optimization_result = result
@@ -227,16 +221,10 @@ class OptimizationService:
 
             yield f"data: {json.dumps({'status': 'parsing', 'progress': 80, 'message': '正在解析结果...'})}\n\n"
 
-            # 解析结果
-            try:
-                result = json.loads(full_response)
-            except json.JSONDecodeError:
-                import re
-                json_match = re.search(r'\{.*\}', full_response, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group())
-                else:
-                    raise ValueError("LLM 返回格式错误")
+            # 解析结果（带容错）
+            result = parse_json_response(full_response)
+            if not result:
+                raise ValueError("LLM 返回格式错误")
 
             # 更新优化结果
             optimization.optimization_result = result
@@ -264,33 +252,35 @@ class OptimizationService:
         self,
         optimization: Optimization,
         result: dict,
-    ) -> str:
-        """生成优化后的 DOCX 文件"""
-        from config import config
+    ) -> Optional[str]:
+        """生成优化后的 DOCX 文件（带降级保护）"""
+        try:
+            from config import config
 
-        # 输出路径
-        output_dir = Path(config.files.dir) / "optimized"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{optimization.id}_resume.docx"
+            output_dir = Path(config.files.dir) / "optimized"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{optimization.id}_resume.docx"
 
-        # 获取 JD 和简历信息
-        jd = optimization.jd
-        resume = optimization.resume
+            jd = optimization.jd
+            resume = optimization.resume
 
-        # 构建内容
-        content = {
-            "name": resume.name.replace(".docx", ""),
-            "optimized_sections": result.get("optimized_sections", {}),
-            "suggestions": result.get("suggestions", []),
-        }
+            content = {
+                "name": resume.name.replace(".docx", ""),
+                "optimized_sections": result.get("optimized_sections", {}),
+                "suggestions": result.get("suggestions", []),
+            }
 
-        # 生成文档
-        docx_writer.create_resume(
-            content=content,
-            output_path=str(output_path),
-        )
+            docx_writer.create_resume(
+                content=content,
+                output_path=str(output_path),
+            )
 
-        return str(output_path)
+            return str(output_path)
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"DOCX 生成失败（优化结果已保存）: {e}")
+            return None
 
     def to_response(self, optimization: Optimization) -> OptimizationResponse:
         """转换为响应格式"""
