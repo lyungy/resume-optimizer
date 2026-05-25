@@ -1,15 +1,23 @@
 """
 优化任务 API 路由
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from pathlib import Path
 from models.database import get_db
 from schemas import OptimizationCreate, OptimizationResponse, OptimizationListResponse
 from services import optimization_service
+from models import Optimization
 
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/optimization", tags=["简历优化"])
 
 
@@ -64,17 +72,24 @@ def get_optimization(optimization_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{optimization_id}/execute", response_model=OptimizationResponse)
-def execute_optimization(
+async def execute_optimization(
     optimization_id: str,
     db: Session = Depends(get_db),
 ):
-    """执行优化任务（同步）"""
+    """执行优化任务（异步）"""
+    import asyncio
     try:
-        optimization = optimization_service.execute(db, optimization_id)
+        logger.info(f"开始执行优化任务: {optimization_id}")
+        optimization = await asyncio.to_thread(
+            optimization_service.execute, db, optimization_id
+        )
+        logger.info(f"优化任务完成: {optimization_id}, 匹配度: {optimization.match_score}")
         return optimization_service.to_response(optimization)
     except ValueError as e:
+        logger.warning(f"优化任务参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"优化任务执行失败: {e}")
         raise HTTPException(status_code=500, detail=f"执行失败: {str(e)}")
 
 
@@ -109,3 +124,35 @@ def download_optimization(optimization_id: str, db: Session = Depends(get_db)):
         filename=f"优化简历_{optimization.id[:8]}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@router.delete("/{optimization_id}")
+def delete_optimization(optimization_id: str, db: Session = Depends(get_db)):
+    """删除优化任务"""
+    optimization = optimization_service.get(db, optimization_id)
+    if not optimization:
+        raise HTTPException(status_code=404, detail="优化任务不存在")
+
+    db.delete(optimization)
+    db.commit()
+    return {"message": "删除成功"}
+
+
+@router.post("/batch-delete")
+def batch_delete_optimizations(
+    data: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """批量删除优化任务"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+
+    items = db.query(Optimization).filter(Optimization.id.in_(data.ids)).all()
+    deleted = 0
+    for item in items:
+        db.delete(item)
+        deleted += 1
+
+    db.commit()
+    logger.info(f"批量删除优化任务: {deleted} 条")
+    return {"deleted": deleted}

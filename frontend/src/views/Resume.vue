@@ -55,7 +55,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="profile" label="深度解析" width="80" align="center">
+        <el-table-column prop="profile" label="职业画像" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.profile ? 'success' : 'info'" size="small">
               {{ row.profile ? '已完成' : '未完成' }}
@@ -67,17 +67,17 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="400" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showDetail(row)">详情</el-button>
+            <el-button size="small" @click="showVersions(row)">版本</el-button>
             <el-button
-              v-if="!row.is_parsed"
               size="small"
               type="success"
               @click="handleParse(row)"
               :loading="parsingId === row.id"
             >
-              AI 解析
+              智能解析
             </el-button>
             <el-button
               size="small"
@@ -85,7 +85,7 @@
               @click="handleDeepAnalyze(row)"
               :loading="deepAnalyzingId === row.id"
             >
-              深度解析
+              职业画像
             </el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -121,7 +121,7 @@
           <el-tag v-for="skill in detailData.skills" :key="skill" type="success" style="margin: 4px">
             {{ skill }}
           </el-tag>
-          <span v-if="!detailData.skills?.length" style="color: #999">暂无（点击 AI 解析提取）</span>
+          <span v-if="!detailData.skills?.length" style="color: #999">暂无（点击 智能解析提取）</span>
         </div>
       </div>
 
@@ -159,14 +159,14 @@
       </div>
     </el-dialog>
 
-    <!-- 深度解析抽屉 -->
+    <!-- 职业画像抽屉 -->
     <el-drawer
       v-model="deepDrawerVisible"
-      title="🧠 简历深度解析"
+      title="🧠 简历职业画像"
       size="600px"
       :close-on-click-modal="false"
     >
-      <div v-loading="deepAnalyzing" element-loading-text="AI 深度解析中...">
+      <div v-loading="deepAnalyzing" element-loading-text="职业画像分析中...">
         <!-- 个人概览 -->
         <el-divider content-position="left">个人概览</el-divider>
         <el-descriptions :column="2" border size="small">
@@ -291,6 +291,9 @@
         <!-- 操作按钮 -->
         <div style="margin-top: 20px; text-align: right">
           <el-button @click="deepDrawerVisible = false">关闭</el-button>
+          <el-button type="warning" @click="regenerateProfile">
+            🔄 重新生成
+          </el-button>
           <el-button type="primary" @click="saveProfile">保存</el-button>
           <el-button type="success" @click="startSearchMatch">
             🔍 搜索匹配
@@ -372,13 +375,95 @@
         <el-empty v-else-if="!searchMatching" description="暂无匹配结果，请先执行搜索" />
       </div>
     </el-drawer>
+
+    <!-- 版本历史抽屉 -->
+    <el-drawer
+      v-model="versionDrawerVisible"
+      title="📋 版本历史"
+      size="500px"
+    >
+      <div v-loading="versionLoading">
+        <el-timeline v-if="versionList.length">
+          <el-timeline-item
+            v-for="v in versionList"
+            :key="v.id"
+            :timestamp="formatDate(v.created_at)"
+            placement="top"
+          >
+            <el-card>
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <div>
+                  <strong>v{{ v.version_no }}</strong>
+                  <el-tag size="small" style="margin-left: 8px">{{ v.label }}</el-tag>
+                </div>
+                <el-button
+                  size="small"
+                  type="primary"
+                  @click="restoreVersion(v)"
+                >
+                  恢复
+                </el-button>
+              </div>
+              <div v-if="v.skills?.length" style="margin-top: 8px">
+                <el-tag v-for="s in v.skills.slice(0, 5)" :key="s" size="small" type="info" style="margin: 2px">
+                  {{ s }}
+                </el-tag>
+                <el-tag v-if="v.skills.length > 5" size="small" type="info">
+                  +{{ v.skills.length - 5 }}
+                </el-tag>
+              </div>
+            </el-card>
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty v-else description="暂无版本记录" />
+      </div>
+    </el-drawer>
+
+    <!-- Prompt 编辑器抽屉 -->
+    <el-drawer
+      v-model="promptDrawerVisible"
+      :title="promptType === 'parse' ? '📝 智能解析 - Prompt 编辑器' : '📝 职业画像 - Prompt 编辑器'"
+      size="650px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="promptLoading">
+        <el-alert
+          :title="promptType === 'parse'
+            ? '系统将使用以下 Prompt 对简历进行智能解析，您可以修改后再执行'
+            : '系统将使用以下 Prompt 对简历进行职业画像分析，您可以修改后再执行'"
+          type="info"
+          :closable="false"
+          style="margin-bottom: 16px"
+        />
+
+        <el-input
+          v-model="promptText"
+          type="textarea"
+          :rows="20"
+          placeholder="System Prompt"
+          style="font-family: monospace; font-size: 13px"
+        />
+
+        <div style="margin-top: 16px; text-align: right">
+          <el-button @click="promptDrawerVisible = false">取消</el-button>
+          <el-button @click="resetPrompt">恢复默认</el-button>
+          <el-button
+            type="primary"
+            @click="executeWithPrompt"
+            :loading="promptExecuting"
+          >
+            执行{{ promptType === 'parse' ? '智能解析' : '职业画像' }}
+          </el-button>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { resumeApi } from '@/api'
+import api, { resumeApi, companyApi } from '@/api'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -392,7 +477,7 @@ const deepAnalyzingId = ref('')
 const detailVisible = ref(false)
 const detailData = ref({})
 
-// 深度解析相关
+// 职业画像相关
 const deepDrawerVisible = ref(false)
 const deepAnalyzing = ref(false)
 const currentResumeId = ref('')
@@ -428,6 +513,12 @@ const positionInputRef = ref(null)
 const matchDrawerVisible = ref(false)
 const searchMatching = ref(false)
 const matchResult = reactive({ total: 0, jobs: [] })
+
+// 版本历史
+const versionDrawerVisible = ref(false)
+const versionLoading = ref(false)
+const versionList = ref([])
+const versionResumeId = ref('')
 
 const dimLabels = {
   skill_match: '技能',
@@ -489,26 +580,84 @@ const showDetail = (row) => {
   detailVisible.value = true
 }
 
-const handleParse = async (row) => {
-  parsingId.value = row.id
+// Prompt 编辑器
+const promptDrawerVisible = ref(false)
+const promptType = ref('')  // 'parse' | 'deep-analyze'
+const promptResumeId = ref('')
+const promptText = ref('')
+const promptLoading = ref(false)
+const promptExecuting = ref(false)
+
+const openPromptEditor = async (row, type) => {
+  promptType.value = type
+  promptResumeId.value = row.id
+  promptDrawerVisible.value = true
+  promptLoading.value = true
   try {
-    await resumeApi.parse(row.id)
-    ElMessage.success('解析完成')
-    loadData()
+    const res = type === 'parse'
+      ? await resumeApi.getParsePrompt()
+      : await resumeApi.getDeepAnalyzePrompt()
+    promptText.value = res.prompt || ''
   } catch (error) {
-    ElMessage.error(error.message)
+    ElMessage.error('加载 prompt 失败：' + error.message)
   } finally {
-    parsingId.value = ''
+    promptLoading.value = false
   }
 }
 
-const handleDeepAnalyze = async (row) => {
-  currentResumeId.value = row.id
-  deepDrawerVisible.value = true
-  deepAnalyzing.value = true
+const executeWithPrompt = async () => {
+  promptExecuting.value = true
+  try {
+    if (promptType.value === 'parse') {
+      await resumeApi.parse(promptResumeId.value, null, promptText.value)
+      ElMessage.success('智能解析完成')
+      promptDrawerVisible.value = false
+      loadData()
+    } else {
+      const result = await resumeApi.deepAnalyze(promptResumeId.value, null, promptText.value)
+      ElMessage.success('职业画像完成')
+      promptDrawerVisible.value = false
+      // 打开画像抽屉展示新结果
+      currentResumeId.value = promptResumeId.value
+      Object.assign(deepResult.profile, result.profile || {})
+      deepResult.recommended_positions = (result.recommended_positions || []).map(p => ({ ...p, selected: true }))
+      deepResult.search_keywords = result.search_keywords || []
+      allSkills.value = extractAllSkills(result.profile || {})
+      allIndustries.value = [...((result.profile || {}).experience_profile?.industries || [])]
+      deepDrawerVisible.value = true
+      loadData()
+    }
+  } catch (error) {
+    ElMessage.error(error.message)
+  } finally {
+    promptExecuting.value = false
+  }
+}
 
-  // 如果已有解析结果，直接展示
+const resetPrompt = async () => {
+  promptLoading.value = true
+  try {
+    const res = promptType.value === 'parse'
+      ? await resumeApi.getParsePrompt()
+      : await resumeApi.getDeepAnalyzePrompt()
+    promptText.value = res.prompt || ''
+    ElMessage.success('已恢复默认 Prompt')
+  } catch (error) {
+    ElMessage.error('恢复失败：' + error.message)
+  } finally {
+    promptLoading.value = false
+  }
+}
+
+const handleParse = (row) => {
+  openPromptEditor(row, 'parse')
+}
+
+const handleDeepAnalyze = (row) => {
+  // 如果已有画像结果，直接打开画像抽屉
   if (row.profile) {
+    currentResumeId.value = row.id
+    deepDrawerVisible.value = true
     Object.assign(deepResult.profile, row.profile)
     deepResult.recommended_positions = (row.recommended_positions || []).map(p => ({ ...p, selected: true }))
     allSkills.value = extractAllSkills(row.profile)
@@ -516,24 +665,18 @@ const handleDeepAnalyze = async (row) => {
     if (row.job_preference) {
       Object.assign(jobPreference, row.job_preference)
     }
-    deepAnalyzing.value = false
     return
   }
+  // 没有画像结果，打开 prompt 编辑器
+  openPromptEditor(row, 'deep-analyze')
+}
 
-  // 调用深度解析 API
-  try {
-    const result = await resumeApi.deepAnalyze(row.id)
-    Object.assign(deepResult.profile, result.profile)
-    deepResult.recommended_positions = (result.recommended_positions || []).map(p => ({ ...p, selected: true }))
-    deepResult.search_keywords = result.search_keywords || []
-    allSkills.value = extractAllSkills(result.profile)
-    allIndustries.value = [...(result.profile.experience_profile?.industries || [])]
-    ElMessage.success('深度解析完成')
-    loadData()
-  } catch (error) {
-    ElMessage.error(error.message || '深度解析失败')
-  } finally {
-    deepAnalyzing.value = false
+const regenerateProfile = () => {
+  // 关闭画像抽屉，打开 prompt 编辑器重新生成
+  deepDrawerVisible.value = false
+  const row = tableData.value.find(r => r.id === currentResumeId.value)
+  if (row) {
+    openPromptEditor(row, 'deep-analyze')
   }
 }
 
@@ -643,23 +786,14 @@ const startSearchMatch = async () => {
   searchMatching.value = true
 
   try {
-    const res = await fetch('/api/v1/collector/search-match', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        resume_id: currentResumeId.value,
-        selected_positions: selected.map(p => p.title),
-        city: jobPreference.city,
-        salary_min: jobPreference.salary_min,
-        salary_max: jobPreference.salary_max,
-        limit_per_keyword: 15,
-      }),
+    const data = await api.post('/collector/search-match', {
+      resume_id: currentResumeId.value,
+      selected_positions: selected.map(p => p.title),
+      city: jobPreference.city,
+      salary_min: jobPreference.salary_min,
+      salary_max: jobPreference.salary_max,
+      limit_per_keyword: 15,
     })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.detail || '搜索失败')
-    }
-    const data = await res.json()
     Object.assign(matchResult, data)
     ElMessage.success(`匹配完成，共 ${data.total} 个岗位`)
   } catch (error) {
@@ -671,18 +805,32 @@ const startSearchMatch = async () => {
 
 const importJob = async (job) => {
   try {
-    await fetch('/api/v1/jd', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: job.title,
-        raw_text: job.description || `${job.title}\n${job.salary}\n${job.experience}\n${job.location}`,
-        source_url: job.url,
-      }),
+    // 查找或创建公司
+    let companyId = null
+    const companyName = job.company_name
+    if (companyName) {
+      const companies = await companyApi.list({ keyword: companyName, page_size: 1 })
+      const existing = companies.items?.find(c => c.name === companyName)
+      if (existing) {
+        companyId = existing.id
+      } else {
+        const newCompany = await companyApi.create({ name: companyName })
+        companyId = newCompany.id
+      }
+    }
+    if (!companyId) {
+      ElMessage.warning('无法确定公司信息，请先创建公司')
+      return
+    }
+    await api.post('/jd', {
+      company_id: companyId,
+      title: job.title,
+      raw_text: job.description || `${job.title}\n${job.salary || ''}\n${job.experience || ''}\n${job.location || ''}`,
+      source_url: job.url,
     })
     ElMessage.success(`已导入: ${job.title}`)
   } catch (error) {
-    ElMessage.error('导入失败')
+    ElMessage.error('导入失败: ' + (error.message || ''))
   }
 }
 
@@ -701,6 +849,37 @@ const handleDelete = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error.message)
+    }
+  }
+}
+
+const showVersions = async (row) => {
+  versionResumeId.value = row.id
+  versionDrawerVisible.value = true
+  versionLoading.value = true
+  try {
+    versionList.value = await resumeApi.getVersions(row.id)
+  } catch (error) {
+    ElMessage.error('加载版本历史失败：' + error.message)
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+const restoreVersion = async (version) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要恢复到 v${version.version_no}（${version.label}）吗？`,
+      '确认恢复',
+      { type: 'warning' }
+    )
+    await resumeApi.restoreVersion(versionResumeId.value, version.id)
+    ElMessage.success('恢复成功')
+    versionDrawerVisible.value = false
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('恢复失败：' + error.message)
     }
   }
 }
@@ -756,7 +935,7 @@ onMounted(() => {
   font-size: 13px;
 }
 
-/* 深度解析抽屉 */
+/* 职业画像抽屉 */
 .editable-tags {
   display: flex;
   flex-wrap: wrap;

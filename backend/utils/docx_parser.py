@@ -31,22 +31,33 @@ class DocxParser:
         paragraphs = []
         tables = []
 
-        # 遍历文档元素，保持原始顺序
-        for element in doc.element.body:
-            tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+        # 构建段落和表格的有序索引
+        para_iter = iter(doc.paragraphs)
+        table_iter = iter(doc.tables)
+
+        # 遍历文档 body 子元素，保持原始顺序
+        from docx.oxml.ns import qn
+        for child in doc.element.body:
+            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
 
             if tag == 'p':
-                # 段落
-                text = element.text
-                if text and text.strip():
-                    paragraphs.append(text.strip())
-                    all_text_parts.append(text.strip())
+                try:
+                    para = next(para_iter)
+                    text = para.text
+                    if text and text.strip():
+                        paragraphs.append(text.strip())
+                        all_text_parts.append(text.strip())
+                except StopIteration:
+                    pass
             elif tag == 'tbl':
-                # 表格
-                table_text = self._extract_table_text(element, doc)
-                if table_text:
-                    tables.append(table_text)
-                    all_text_parts.append(table_text["formatted_text"])
+                try:
+                    table = next(table_iter)
+                    table_text = self._extract_table_from_object(table)
+                    if table_text:
+                        tables.append(table_text)
+                        all_text_parts.append(table_text["formatted_text"])
+                except StopIteration:
+                    pass
 
         # 合并所有文本
         full_text = "\n".join(all_text_parts)
@@ -61,12 +72,8 @@ class DocxParser:
             "sections": sections,
         }
 
-    def _extract_table_text(self, table_element, doc) -> dict:
-        """从表格元素中提取文本"""
-        from docx.table import Table
-        from docx.oxml.ns import qn
-
-        table = Table(table_element, doc)
+    def _extract_table_from_object(self, table) -> dict:
+        """从 python-docx Table 对象中提取文本"""
         headers = []
         rows = []
         all_row_texts = []

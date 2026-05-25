@@ -13,15 +13,28 @@ const routes = [
   },
   {
     path: '/company',
+    name: 'Company',
+    component: () => import('@/views/Company.vue'),
+  },
   {
     path: '/optimization',
     name: 'Optimization',
     component: () => import('@/views/Optimization.vue'),
   },
   {
+    path: '/jd',
+    name: 'JD',
+    component: () => import('@/views/JD.vue'),
+  },
+  {
     path: '/interview',
     name: 'Interview',
     component: () => import('@/views/Interview.vue'),
+  },
+  {
+    path: '/llm-logs',
+    name: 'LLMLogs',
+    component: () => import('@/views/LLMLogs.vue'),
   },
 ]
 

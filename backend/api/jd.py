@@ -1,14 +1,25 @@
 """
 JD API 路由
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from models.database import get_db
-from schemas import JDCreate, JDUpdate, JDResponse, JDListResponse
+from schemas import (
+    JDCreate, JDUpdate, JDResponse, JDListResponse,
+    JDBatchImportRequest, JDBatchImportResponse,
+)
 from services import jd_service
+from models import JobDescription
 
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jd", tags=["JD 管理"])
 
 
@@ -20,6 +31,18 @@ def create_jd(data: JDCreate, db: Session = Depends(get_db)):
         return jd_service.to_response(jd)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/batch-import", response_model=JDBatchImportResponse)
+def batch_import_jds(
+    data: JDBatchImportRequest,
+    db: Session = Depends(get_db),
+):
+    """批量导入 JD（自动创建公司）"""
+    logger.info(f"批量导入 JD: {len(data.items)} 条")
+    result = jd_service.batch_import(db, data.items)
+    logger.info(f"批量导入完成: 成功 {result['success']}, 失败 {result['failed']}")
+    return JDBatchImportResponse(**result)
 
 
 @router.get("", response_model=JDListResponse)
@@ -79,19 +102,48 @@ def delete_jd(jd_id: str, db: Session = Depends(get_db)):
     return {"message": "删除成功"}
 
 
+@router.post("/batch-delete")
+def batch_delete_jds(
+    data: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """批量删除 JD"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+
+    jds = db.query(JobDescription).filter(JobDescription.id.in_(data.ids)).all()
+    deleted = 0
+    for jd in jds:
+        db.delete(jd)
+        deleted += 1
+
+    db.commit()
+    logger.info(f"批量删除 JD: {deleted} 条")
+    return {"deleted": deleted}
+
+
 @router.post("/{jd_id}/parse", response_model=JDResponse)
-def parse_jd(
+async def parse_jd(
     jd_id: str,
     llm_provider: Optional[str] = Query(None, description="LLM Provider"),
     llm_model: Optional[str] = Query(None, description="LLM 模型"),
     db: Session = Depends(get_db),
 ):
-    """解析 JD（同步）"""
+    """解析 JD（异步）"""
+    import asyncio
     try:
-        jd = jd_service.parse(db, jd_id, llm_provider, llm_model)
+        logger.info(f"开始解析 JD: {jd_id}")
+        jd = await asyncio.to_thread(
+            jd_service.parse, db, jd_id, llm_provider, llm_model
+        )
+        logger.info(f"JD 解析完成: {jd_id}")
         return jd_service.to_response(jd)
     except ValueError as e:
+        logger.warning(f"JD 解析参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"JD 解析失败: {e}")
+        raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
 
 
 @router.get("/{jd_id}/parse-stream")

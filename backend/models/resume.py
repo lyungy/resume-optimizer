@@ -28,13 +28,16 @@ class Resume(Base, TimestampMixin):
     # 解析状态
     is_parsed: Mapped[bool] = mapped_column(default=False, comment="是否已解析")
 
-    # 深度解析结果
-    profile: Mapped[dict | None] = mapped_column(JSON, comment="求职画像（深度解析结果）")
+    # 职业画像结果
+    profile: Mapped[dict | None] = mapped_column(JSON, comment="求职画像（职业画像结果）")
     recommended_positions: Mapped[list | None] = mapped_column(JSON, comment="AI推荐岗位列表")
     job_preference: Mapped[dict | None] = mapped_column(JSON, comment="用户求职偏好")
 
     # 关系
     optimizations: Mapped[list["Optimization"]] = relationship(
+        back_populates="resume", cascade="all, delete-orphan"
+    )
+    versions: Mapped[list["ResumeVersion"]] = relationship(
         back_populates="resume", cascade="all, delete-orphan"
     )
 

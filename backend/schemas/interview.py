@@ -20,7 +20,7 @@ class HighFrequencyQuestion(BaseModel):
     question: str = ""
     category: str = ""
     difficulty: str = "medium"
-    answer_template: Optional[str] = None
+    answer_template: str | None = None
     key_points: list[str] = []
     common_mistakes: list[str] = []
 
@@ -49,15 +49,15 @@ class CompanyResearch(BaseModel):
 
 class SalaryNegotiation(BaseModel):
     """薪资谈判"""
-    market_range: Optional[str] = None
+    market_range: str | None = None
     negotiation_tips: list[str] = []
 
 
 class InterviewGuideCreate(BaseModel):
     """创建面试攻略"""
     optimization_id: str = Field(..., description="优化任务 ID")
-    llm_provider: Optional[str] = Field(None, description="LLM Provider")
-    llm_model: Optional[str] = Field(None, description="LLM 模型")
+    llm_provider: str | None = Field(None, description="LLM Provider")
+    llm_model: str | None = Field(None, description="LLM 模型")
 
 
 class InterviewGuideResponse(BaseModel):
@@ -67,15 +67,15 @@ class InterviewGuideResponse(BaseModel):
     knowledge_points: Optional[list[dict]] = None
     high_frequency_questions: Optional[list[dict]] = None
     answer_templates: Optional[list[dict]] = None
-    preparation_strategy: Optional[dict] = None
-    company_research: Optional[dict] = None
-    export_docx_path: Optional[str] = None
+    preparation_strategy: dict | None = None
+    company_research: dict | None = None
+    export_docx_path: str | None = None
     created_at: datetime
     updated_at: datetime
 
     # 关联数据
-    jd_title: Optional[str] = None
-    company_name: Optional[str] = None
+    jd_title: str | None = None
+    company_name: str | None = None
 
     class Config:
         from_attributes = True

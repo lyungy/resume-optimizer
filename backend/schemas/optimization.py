@@ -10,8 +10,8 @@ class OptimizationCreate(BaseModel):
     """创建优化任务"""
     jd_id: str = Field(..., description="JD ID")
     resume_id: str = Field(..., description="简历 ID")
-    llm_provider: Optional[str] = Field(None, description="LLM Provider（默认 xiaomi-coding）")
-    llm_model: Optional[str] = Field(None, description="LLM 模型（使用 Provider 默认）")
+    llm_provider: str | None = Field(None, description="LLM Provider（默认 xiaomi-coding）")
+    llm_model: str | None = Field(None, description="LLM 模型（使用 Provider 默认）")
 
 
 class KeywordCoverage(BaseModel):
@@ -25,20 +25,20 @@ class OptimizedExperience(BaseModel):
     """优化后的工作经历"""
     company: str = ""
     title: str = ""
-    period: Optional[str] = None
+    period: str | None = None
     highlights: list[str] = []
 
 
 class OptimizedProject(BaseModel):
     """优化后的项目经历"""
     name: str = ""
-    role: Optional[str] = None
+    role: str | None = None
     highlights: list[str] = []
 
 
 class OptimizedSections(BaseModel):
     """优化后的内容"""
-    summary: Optional[str] = None
+    summary: str | None = None
     skills: list[str] = []
     experience: list[OptimizedExperience] = []
     projects: list[OptimizedProject] = []
@@ -62,20 +62,20 @@ class OptimizationResponse(BaseModel):
     llm_provider: str
     llm_model: str
     status: str
-    match_score: Optional[float] = None
-    keyword_coverage: Optional[dict] = None
-    optimization_result: Optional[dict] = None
+    match_score: float | None = None
+    keyword_coverage: dict | None = None
+    optimization_result: dict | None = None
     suggestions: Optional[list[str]] = None
     ats_tips: Optional[list[str]] = None
-    optimized_docx_path: Optional[str] = None
-    error_message: Optional[str] = None
+    optimized_docx_path: str | None = None
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
     # 关联数据
-    jd_title: Optional[str] = None
-    company_name: Optional[str] = None
-    resume_name: Optional[str] = None
+    jd_title: str | None = None
+    company_name: str | None = None
+    resume_name: str | None = None
     has_interview_guide: bool = False
 
     class Config:

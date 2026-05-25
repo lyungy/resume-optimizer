@@ -1,15 +1,11 @@
 """
-简历深度解析 Prompt
+简历职业画像 Prompt
 提取多维度求职画像 + 推荐适合岗位
 """
 
 
-def get_deep_analyze_prompt(resume_text: str) -> list[dict]:
-    """
-    构建简历深度解析的 Prompt
-    返回消息列表，用于 LLM 调用
-    """
-    system_prompt = """你是资深职业规划师和简历分析专家。根据简历内容，完成以下任务：
+# 系统 prompt 常量
+DEEP_ANALYZE_SYSTEM = """你是资深职业规划师和简历分析专家。根据简历内容，完成以下任务：
 
 1. 提取硬性技能（按类别分类：语言、框架、中间件、架构能力、运维工具、数据库）
 2. 提取软技能（管理能力、技术能力、业务能力）
@@ -25,6 +21,18 @@ def get_deep_analyze_prompt(resume_text: str) -> list[dict]:
 - 管理经验（是否有团队管理经验，管理岗位需要）
 
 必须输出纯 JSON，不要任何额外文字。"""
+
+
+# 用于 API 返回给前端展示
+DEEP_ANALYZE_PROMPT_TEMPLATE = DEEP_ANALYZE_SYSTEM
+
+
+def get_deep_analyze_prompt(resume_text: str, custom_system: str | None = None) -> list[dict]:
+    """
+    构建职业画像的 Prompt，支持自定义 system prompt
+    返回消息列表，用于 LLM 调用
+    """
+    system_prompt = custom_system or DEEP_ANALYZE_SYSTEM
 
     user_prompt = f"""请分析以下简历内容：
 

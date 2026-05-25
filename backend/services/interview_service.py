@@ -12,10 +12,11 @@ from schemas import InterviewGuideCreate, InterviewGuideResponse
 from services.llm import get_llm_client
 from services.llm.retry import call_llm_with_retry, parse_json_response
 from services.llm.prompts import get_interview_guide_prompt
+from services.llm.usage_logger import log_llm_usage
 from utils import docx_writer
 from config import config
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("resume_optimizer.interview")
 
 
 class InterviewService:
@@ -114,16 +115,41 @@ class InterviewService:
             optimized_summary=optimized_summary,
         )
 
-        # 调用 LLM（带重试）
-        response = call_llm_with_retry(client, messages, model)
+        # 调用 LLM（带重试+计时+日志）
+        import time as _time
+        _start = _time.time()
+        try:
+            response = call_llm_with_retry(client, messages, model)
+            _duration_ms = int((_time.time() - _start) * 1000)
+        except Exception as e:
+            _duration_ms = int((_time.time() - _start) * 1000)
+            log_llm_usage(
+                db, feature="面试攻略", llm_provider=client.provider.name,
+                llm_model=model, system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                duration_ms=_duration_ms, status="failed",
+                error_message=str(e),
+                related_id=guide_id, related_type="interview",
+            )
+            raise
 
         # 解析结果（带容错）
         result = parse_json_response(response)
 
+        # 记录成功日志
+        log_llm_usage(
+            db, feature="面试攻略", llm_provider=client.provider.name,
+            llm_model=model, system_prompt=messages[0]["content"],
+            user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+            raw_response=response, parsed_result=result,
+            duration_ms=_duration_ms,
+            related_id=guide_id, related_type="interview",
+        )
+
         # 更新攻略
         guide.knowledge_points = result.get("knowledge_points", [])
         guide.high_frequency_questions = result.get("high_frequency_questions", [])
-        guide.answer_templates = result.get("high_frequency_questions", [])
+        guide.answer_templates = result.get("answer_templates", [])
         guide.preparation_strategy = result.get("preparation_strategy", {})
         guide.company_research = result.get("company_research", {})
 

@@ -2,7 +2,10 @@
 Schema 包
 """
 from .company import CompanyCreate, CompanyUpdate, CompanyResponse, CompanyListResponse
-from .jd import JDCreate, JDUpdate, JDParseResult, JDResponse, JDListResponse
+from .jd import (
+    JDCreate, JDUpdate, JDParseResult, JDResponse, JDListResponse,
+    JDBatchImportItem, JDBatchImportRequest, JDBatchImportResponse,
+)
 from .resume import ResumeResponse, ResumeListResponse, DeepAnalyzeResponse, ProfileUpdateRequest, SearchMatchRequest
 from .optimization import (
     OptimizationCreate,
@@ -26,6 +29,9 @@ __all__ = [
     "JDParseResult",
     "JDResponse",
     "JDListResponse",
+    "JDBatchImportItem",
+    "JDBatchImportRequest",
+    "JDBatchImportResponse",
     "ResumeResponse",
     "ResumeListResponse",
     "DeepAnalyzeResponse",

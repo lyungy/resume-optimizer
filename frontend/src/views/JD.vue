@@ -4,10 +4,16 @@
       <template #header>
         <div class="card-header">
           <span>JD 管理</span>
-          <el-button type="primary" @click="showDialog()">
-            <el-icon><Plus /></el-icon>
-            新增 JD
-          </el-button>
+          <div>
+            <el-button @click="batchDialogVisible = true">
+              <el-icon><Upload /></el-icon>
+              批量导入
+            </el-button>
+            <el-button type="primary" @click="showDialog()">
+              <el-icon><Plus /></el-icon>
+              新增 JD
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -36,7 +42,15 @@
         </el-form-item>
       </el-form>
 
-      <el-table :data="tableData" v-loading="loading" border>
+      <div v-if="selectedIds.length" style="margin-bottom: 12px">
+        <el-button type="danger" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          批量删除（{{ selectedIds.length }}）
+        </el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="title" label="职位名称" min-width="150" />
         <el-table-column prop="company_name" label="公司" width="120" />
         <el-table-column prop="source_url" label="来源" width="100">
@@ -206,13 +220,62 @@
         <pre class="raw-text">{{ detailData.raw_text }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 批量导入对话框 -->
+    <el-dialog v-model="batchDialogVisible" title="批量导入 JD" width="700px">
+      <el-alert
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      >
+        <template #title>
+          <span>支持 JSON 格式，每条需包含 company_name、title、raw_text 字段，可选 industry、source_url</span>
+        </template>
+      </el-alert>
+
+      <el-input
+        v-model="batchJsonText"
+        type="textarea"
+        :rows="12"
+        placeholder='[
+  {
+    "company_name": "示例公司",
+    "title": "高级工程师",
+    "raw_text": "职位描述内容...",
+    "industry": "互联网"
+  }
+]'
+      />
+
+      <div v-if="batchResult" style="margin-top: 12px">
+        <el-alert
+          :type="batchResult.failed > 0 ? 'warning' : 'success'"
+          :closable="false"
+        >
+          <template #title>
+            导入完成：成功 {{ batchResult.success }} 条，失败 {{ batchResult.failed }} 条
+          </template>
+        </el-alert>
+      </div>
+
+      <template #footer>
+        <el-button @click="batchDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="handleBatchImport"
+          :loading="batchImporting"
+        >
+          开始导入
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { jdApi, companyApi } from '@/api'
+import api, { jdApi, companyApi } from '@/api'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -224,6 +287,7 @@ const searchCompanyId = ref('')
 const searchParsed = ref(undefined)
 const searchKeyword = ref('')
 const parsingId = ref('')
+const selectedIds = ref([])
 
 const dialogVisible = ref(false)
 const detailVisible = ref(false)
@@ -235,6 +299,12 @@ const formData = ref({
   source_url: '',
 })
 const detailData = ref({})
+
+// 批量导入
+const batchDialogVisible = ref(false)
+const batchJsonText = ref('')
+const batchImporting = ref(false)
+const batchResult = ref(null)
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -328,6 +398,61 @@ const handleDelete = async (row) => {
     if (error !== 'cancel') {
       ElMessage.error(error.message)
     }
+  }
+}
+
+const handleSelectionChange = (rows) => {
+  selectedIds.value = rows.map(r => r.id)
+}
+
+const handleBatchDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 条 JD 吗？`,
+      '批量删除',
+      { type: 'warning' }
+    )
+    const res = await jdApi.batchDelete(selectedIds.value)
+    ElMessage.success(`删除成功 ${res.deleted} 条`)
+    selectedIds.value = []
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message)
+    }
+  }
+}
+
+const handleBatchImport = async () => {
+  if (!batchJsonText.value.trim()) {
+    ElMessage.warning('请输入 JSON 数据')
+    return
+  }
+
+  let items
+  try {
+    items = JSON.parse(batchJsonText.value)
+    if (!Array.isArray(items)) {
+      ElMessage.warning('JSON 必须是数组格式')
+      return
+    }
+  } catch (e) {
+    ElMessage.error('JSON 格式错误：' + e.message)
+    return
+  }
+
+  batchImporting.value = true
+  batchResult.value = null
+  try {
+    const res = await api.post('/jd/batch-import', { items })
+    batchResult.value = res
+    ElMessage.success(`导入完成：成功 ${res.success} 条`)
+    loadData()
+    loadCompanies()
+  } catch (error) {
+    ElMessage.error('批量导入失败：' + error.message)
+  } finally {
+    batchImporting.value = false
   }
 }
 

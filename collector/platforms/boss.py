@@ -178,6 +178,31 @@ class BossPlatform(BasePlatform):
             await self.human.clear_input(SEL_SEARCH_INPUT_FALLBACK)
         await self.human.random_pause(0.3, 0.5)
 
+        # 验证清空，残留则重试
+        for _attempt in range(2):
+            current = ''
+            for sel in [SEL_SEARCH_INPUT, SEL_SEARCH_INPUT_FALLBACK]:
+                try:
+                    current = await self.browser.evaluate(
+                        f"() => document.querySelector('{sel}')?.value || ''"
+                    )
+                    if current:
+                        break
+                except Exception:
+                    continue
+            if not current:
+                break
+            # 重试：重新聚焦 + Ctrl+A + Delete
+            print(f"  ⚠️ 搜索框残留 '{current}'，重试清空")
+            try:
+                await self.human.click(SEL_SEARCH_INPUT)
+            except ValueError:
+                await self.human.click(SEL_SEARCH_INPUT_FALLBACK)
+            await self.browser.page.keyboard.press('Meta+a')
+            await asyncio.sleep(0.1)
+            await self.browser.page.keyboard.press('Delete')
+            await self.human.random_pause(0.3, 0.5)
+
         # 逐字输入新关键词
         try:
             await self.human.type_text(SEL_SEARCH_INPUT, keyword)

@@ -9,6 +9,8 @@ from .interview import router as interview_router
 from .llm import router as llm_router
 from .stats import router as stats_router
 from .collector import router as collector_router
+from .templates import router as templates_router
+from .llm_logs import router as llm_logs_router
 
 __all__ = [
     "company_router",
@@ -19,4 +21,6 @@ __all__ = [
     "llm_router",
     "stats_router",
     "collector_router",
+    "templates_router",
+    "llm_logs_router",
 ]

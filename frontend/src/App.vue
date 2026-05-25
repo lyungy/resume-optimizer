@@ -33,6 +33,10 @@
           <el-icon><Reading /></el-icon>
           <span>面试攻略</span>
         </el-menu-item>
+        <el-menu-item index="/llm-logs">
+          <el-icon><Monitor /></el-icon>
+          <span>LLM 日志</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -61,6 +65,7 @@ const titleMap = {
   '/jd': 'JD 管理',
   '/optimization': '简历优化',
   '/interview': '面试攻略',
+  '/llm-logs': 'LLM 日志',
 }
 
 const currentTitle = computed(() => titleMap[route.path] || '简历优化系统')

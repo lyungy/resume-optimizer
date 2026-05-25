@@ -7,7 +7,7 @@ import time
 import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("resume_optimizer.llm")
 
 # 重试配置
 MAX_RETRIES = 3

@@ -42,7 +42,7 @@ async def search_and_match(
 
     profile = resume.profile
     if not profile:
-        raise HTTPException(status_code=400, detail="简历未进行深度解析，请先执行深度解析")
+        raise HTTPException(status_code=400, detail="简历未进行职业画像，请先执行职业画像")
 
     job_preference = resume.job_preference or {}
     if data.salary_min:
@@ -62,7 +62,7 @@ async def search_and_match(
     import yaml
 
     # 加载 collector 配置
-    config_path = Path(__file__).parent.parent / "collector" / "config.yaml"
+    config_path = Path(__file__).parent.parent.parent / "collector" / "config.yaml"
     if not config_path.exists():
         raise HTTPException(status_code=500, detail="collector 配置文件不存在")
 

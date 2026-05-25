@@ -44,8 +44,12 @@ RESUME_PARSE_SYSTEM = """你是一位资深 HR 和 ATS 系统专家，擅长从�
 6. 不要遗漏任何工作经历或项目"""
 
 
-def get_resume_parse_prompt(resume_text: str) -> list[dict]:
-    """获取简历解析的完整 prompt"""
+# 用于 API 返回给前端展示
+RESUME_PARSE_PROMPT_TEMPLATE = RESUME_PARSE_SYSTEM
+
+
+def get_resume_parse_prompt(resume_text: str, custom_system: str | None = None) -> list[dict]:
+    """获取简历解析的完整 prompt，支持自定义 system prompt"""
     # 截取前 8000 字符，避免超出 token 限制
     truncated_text = resume_text[:8000] if len(resume_text) > 8000 else resume_text
 
@@ -55,7 +59,9 @@ def get_resume_parse_prompt(resume_text: str) -> list[dict]:
 
 请以 JSON 格式输出。注意提取所有工作经历和项目经历。"""
 
+    system = custom_system or RESUME_PARSE_SYSTEM
+
     return [
-        {"role": "system", "content": RESUME_PARSE_SYSTEM},
+        {"role": "system", "content": system},
         {"role": "user", "content": user_content},
     ]

@@ -37,6 +37,8 @@ def init_db():
     import models.company
     import models.jd
     import models.resume
+    import models.resume_version
     import models.optimization
     import models.interview
+    import models.llm_usage_log
     Base.metadata.create_all(bind=engine)

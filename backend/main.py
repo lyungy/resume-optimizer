@@ -6,6 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from config import config
 from models.database import init_db
+from utils.logger import setup_logger
+
+logger = setup_logger()
 
 
 # 应用生命周期
@@ -14,10 +17,10 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时初始化数据库
     init_db()
-    print(f"✅ 数据库初始化完成: {config.database.url}")
+    logger.info(f"数据库初始化完成: {config.database.url}")
     yield
     # 关闭时清理资源
-    print("👋 应用关闭")
+    logger.info("应用关闭")
 
 
 # 创建 FastAPI 应用
@@ -48,6 +51,8 @@ from api import (
     stats_router,
     collector_router,
 )
+from api.templates import router as templates_router
+from api.llm_logs import router as llm_logs_router
 
 app.include_router(company_router, prefix="/api/v1")
 app.include_router(jd_router, prefix="/api/v1")
@@ -57,6 +62,8 @@ app.include_router(interview_router, prefix="/api/v1")
 app.include_router(llm_router, prefix="/api/v1")
 app.include_router(stats_router, prefix="/api/v1")
 app.include_router(collector_router, prefix="/api/v1")
+app.include_router(templates_router, prefix="/api/v1")
+app.include_router(llm_logs_router, prefix="/api/v1")
 
 
 @app.get("/")

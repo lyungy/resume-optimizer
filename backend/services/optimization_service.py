@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 import json
+import logging
 from pathlib import Path
 from typing import Optional, Generator
 from sqlalchemy.orm import Session
@@ -11,8 +12,11 @@ from schemas import OptimizationCreate, OptimizationResponse
 from services.llm import get_llm_client
 from services.llm.retry import call_llm_with_retry, parse_json_response
 from services.llm.prompts import get_resume_optimize_prompt
+from services.llm.usage_logger import log_llm_usage, timed_llm_call
 from utils import docx_writer
 from config import config
+
+logger = logging.getLogger(__name__)
 
 
 class OptimizationService:
@@ -92,6 +96,7 @@ class OptimizationService:
         # 更新状态
         optimization.status = "processing"
         db.commit()
+        logger.info(f"开始执行优化任务: {optimization_id}")
 
         try:
             # 获取 JD 和简历
@@ -122,17 +127,54 @@ class OptimizationService:
                 resume_text=resume_text,
             )
 
-            # 调用 LLM（带重试）
-            response = call_llm_with_retry(
-                client=client,
-                messages=messages,
-                model=optimization.llm_model,
-            )
+            # 调用 LLM（带重试+计时+日志）
+            import time as _time
+            _start = _time.time()
+            _retry_count = 0
+            try:
+                response = call_llm_with_retry(
+                    client=client,
+                    messages=messages,
+                    model=optimization.llm_model,
+                )
+                _duration_ms = int((_time.time() - _start) * 1000)
+            except Exception as e:
+                _duration_ms = int((_time.time() - _start) * 1000)
+                log_llm_usage(
+                    db, feature="简历优化", llm_provider=client.provider.name,
+                    llm_model=optimization.llm_model,
+                    system_prompt=messages[0]["content"],
+                    user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                    duration_ms=_duration_ms, status="failed",
+                    error_message=str(e), retry_count=_retry_count,
+                    related_id=optimization_id, related_type="optimization",
+                )
+                raise
 
             # 解析结果（带容错）
             result = parse_json_response(response)
             if not result:
+                log_llm_usage(
+                    db, feature="简历优化", llm_provider=client.provider.name,
+                    llm_model=optimization.llm_model,
+                    system_prompt=messages[0]["content"],
+                    user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                    raw_response=response, duration_ms=_duration_ms,
+                    status="failed", error_message="JSON 解析失败",
+                    related_id=optimization_id, related_type="optimization",
+                )
                 raise ValueError("LLM 返回格式错误")
+
+            # 记录成功日志
+            log_llm_usage(
+                db, feature="简历优化", llm_provider=client.provider.name,
+                llm_model=optimization.llm_model,
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                raw_response=response, parsed_result=result,
+                duration_ms=_duration_ms, related_id=optimization_id,
+                related_type="optimization",
+            )
 
             # 更新优化结果
             optimization.optimization_result = result
@@ -148,12 +190,14 @@ class OptimizationService:
 
             db.commit()
             db.refresh(optimization)
+            logger.info(f"优化任务完成: {optimization_id}, 匹配度: {optimization.match_score}")
             return optimization
 
         except Exception as e:
             optimization.status = "failed"
             optimization.error_message = str(e)
             db.commit()
+            logger.error(f"优化任务失败: {optimization_id}, error={e}")
             raise
 
     def execute_stream(

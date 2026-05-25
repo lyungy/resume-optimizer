@@ -12,15 +12,15 @@ class ResumeResponse(BaseModel):
     name: str
     original_file_path: str
     is_parsed: bool = False
-    parsed_content: Optional[dict] = None
+    parsed_content: dict | None = None
     skills: Optional[list[str]] = None
-    experience_years: Optional[int] = None
-    education: Optional[dict] = None
+    experience_years: int | None = None
+    education: dict | None = None
     work_experience: Optional[list[dict]] = None
     projects: Optional[list[dict]] = None
-    profile: Optional[dict] = None
+    profile: dict | None = None
     recommended_positions: Optional[list[dict]] = None
-    job_preference: Optional[dict] = None
+    job_preference: dict | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -29,7 +29,7 @@ class ResumeResponse(BaseModel):
 
 
 class DeepAnalyzeResponse(BaseModel):
-    """深度解析响应"""
+    """职业画像响应"""
     profile: dict
     recommended_positions: list[dict]
     search_keywords: list[str]
@@ -37,9 +37,9 @@ class DeepAnalyzeResponse(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     """求职画像更新请求"""
-    profile: Optional[dict] = None
+    profile: dict | None = None
     recommended_positions: Optional[list[dict]] = None
-    job_preference: Optional[dict] = None
+    job_preference: dict | None = None
 
 
 class SearchMatchRequest(BaseModel):
@@ -47,8 +47,8 @@ class SearchMatchRequest(BaseModel):
     resume_id: str
     selected_positions: list[str]
     city: str = "上海"
-    salary_min: Optional[int] = None
-    salary_max: Optional[int] = None
+    salary_min: int | None = None
+    salary_max: int | None = None
     limit_per_keyword: int = 20
 
 

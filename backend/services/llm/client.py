@@ -2,9 +2,12 @@
 LLM 客户端 - OpenAI 兼容
 支持 MiMo、DeepSeek 等多个 Provider
 """
+import logging
 from typing import Generator, Optional
 from openai import OpenAI
 from config import config, LLMProviderConfig, LLMModelConfig
+
+logger = logging.getLogger("resume_optimizer.llm")
 
 
 class LLMClient:
@@ -44,8 +47,10 @@ class LLMClient:
         response_format: Optional[dict] = None,
     ) -> str:
         """同步对话"""
+        use_model = model or self._default_model
+        logger.info(f"LLM 请求: provider={self.provider.name}, model={use_model}")
         kwargs = {
-            "model": model or self._default_model,
+            "model": use_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -54,7 +59,9 @@ class LLMClient:
             kwargs["response_format"] = response_format
 
         response = self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        logger.info(f"LLM 响应: model={use_model}, tokens={response.usage.total_tokens if response.usage else 'N/A'}")
+        return content
 
     def chat_json(
         self,

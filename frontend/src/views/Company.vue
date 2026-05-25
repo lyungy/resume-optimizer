@@ -20,7 +20,15 @@
         </el-form-item>
       </el-form>
 
-      <el-table :data="tableData" v-loading="loading" border>
+      <div v-if="selectedIds.length" style="margin-bottom: 12px">
+        <el-button type="danger" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          批量删除（{{ selectedIds.length }}）
+        </el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="name" label="公司名称" min-width="120" />
         <el-table-column prop="industry" label="行业" width="120" />
         <el-table-column prop="size" label="规模" width="100" />
@@ -98,6 +106,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const searchKeyword = ref('')
+const selectedIds = ref([])
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -136,7 +145,14 @@ const loadData = async () => {
 const showDialog = (row) => {
   if (row) {
     isEdit.value = true
-    formData.value = { ...row }
+    formData.value = {
+      id: row.id,
+      name: row.name,
+      industry: row.industry || '',
+      size: row.size || '',
+      website: row.website || '',
+      notes: row.notes || '',
+    }
   } else {
     isEdit.value = false
     formData.value = {
@@ -182,6 +198,32 @@ const handleDelete = async (row) => {
     })
     await companyApi.delete(row.id)
     ElMessage.success('删除成功')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message)
+    }
+  }
+}
+
+const handleSelectionChange = (rows) => {
+  selectedIds.value = rows.map(r => r.id)
+}
+
+const handleBatchDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 家公司吗？`,
+      '批量删除',
+      { type: 'warning' }
+    )
+    const res = await companyApi.batchDelete(selectedIds.value)
+    let msg = `删除成功 ${res.deleted} 家`
+    if (res.skipped > 0) {
+      msg += `，跳过 ${res.skipped} 家（存在关联 JD）`
+    }
+    ElMessage.success(msg)
+    selectedIds.value = []
     loadData()
   } catch (error) {
     if (error !== 'cancel') {

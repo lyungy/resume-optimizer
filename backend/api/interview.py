@@ -1,15 +1,23 @@
 """
 面试攻略 API 路由
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from pathlib import Path
 from models.database import get_db
 from schemas import InterviewGuideCreate, InterviewGuideResponse, InterviewGuideListResponse
 from services import interview_service
+from models import InterviewGuide
 
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/interview", tags=["面试攻略"])
 
 
@@ -58,19 +66,26 @@ def get_interview_guide(guide_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{guide_id}/generate", response_model=InterviewGuideResponse)
-def generate_interview_guide(
+async def generate_interview_guide(
     guide_id: str,
     llm_provider: Optional[str] = Query(None, description="LLM Provider"),
     llm_model: Optional[str] = Query(None, description="LLM 模型"),
     db: Session = Depends(get_db),
 ):
-    """生成面试攻略内容"""
+    """生成面试攻略内容（异步）"""
+    import asyncio
     try:
-        guide = interview_service.generate(db, guide_id, llm_provider, llm_model)
+        logger.info(f"开始生成面试攻略: {guide_id}")
+        guide = await asyncio.to_thread(
+            interview_service.generate, db, guide_id, llm_provider, llm_model
+        )
+        logger.info(f"面试攻略生成完成: {guide_id}")
         return interview_service.to_response(guide)
     except ValueError as e:
+        logger.warning(f"面试攻略参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"面试攻略生成失败: {e}")
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
 
 
@@ -106,3 +121,35 @@ def get_guide_by_optimization(
         raise HTTPException(status_code=404, detail="攻略不存在")
 
     return interview_service.to_response(guide)
+
+
+@router.delete("/{guide_id}")
+def delete_interview_guide(guide_id: str, db: Session = Depends(get_db)):
+    """删除面试攻略"""
+    guide = interview_service.get(db, guide_id)
+    if not guide:
+        raise HTTPException(status_code=404, detail="攻略不存在")
+
+    db.delete(guide)
+    db.commit()
+    return {"message": "删除成功"}
+
+
+@router.post("/batch-delete")
+def batch_delete_guides(
+    data: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """批量删除面试攻略"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+
+    guides = db.query(InterviewGuide).filter(InterviewGuide.id.in_(data.ids)).all()
+    deleted = 0
+    for guide in guides:
+        db.delete(guide)
+        deleted += 1
+
+    db.commit()
+    logger.info(f"批量删除面试攻略: {deleted} 条")
+    return {"deleted": deleted}

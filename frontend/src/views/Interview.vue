@@ -7,7 +7,15 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" border>
+      <div v-if="selectedIds.length" style="margin-bottom: 12px">
+        <el-button type="danger" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          批量删除（{{ selectedIds.length }}）
+        </el-button>
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="jd_title" label="职位" min-width="120" />
         <el-table-column prop="company_name" label="公司" width="120" />
         <el-table-column label="知识点" width="80" align="center">
@@ -25,7 +33,7 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showDetail(row)">查看攻略</el-button>
             <el-button
@@ -45,6 +53,7 @@
             >
               生成内容
             </el-button>
+            <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -180,8 +189,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import api, { interviewApi } from '@/api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import api, { interviewApi, downloadFile } from '@/api'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -192,6 +201,7 @@ const total = ref(0)
 const detailVisible = ref(false)
 const detailData = ref(null)
 const generatingId = ref('')
+const selectedIds = ref([])
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -232,21 +242,47 @@ const handleGenerate = async (row) => {
   }
 }
 
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm('确定要删除该攻略吗？', '提示', { type: 'warning' })
+    await interviewApi.delete(row.id)
+    ElMessage.success('删除成功')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message)
+    }
+  }
+}
+
 const handleDownload = async (row) => {
   try {
-    const response = await api.get(`/interview/${row.id}/download`, {
-      responseType: 'blob',
-    })
-    const url = window.URL.createObjectURL(new Blob([response]))
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `面试攻略_${row.company_name || ''}_${row.jd_title || ''}.docx`)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.URL.revokeObjectURL(url)
+    const filename = `面试攻略_${row.company_name || ''}_${row.jd_title || ''}.docx`
+    await downloadFile(`/interview/${row.id}/download`, filename)
   } catch (error) {
     ElMessage.error('下载失败: ' + error.message)
+  }
+}
+
+const handleSelectionChange = (rows) => {
+  selectedIds.value = rows.map(r => r.id)
+}
+
+const handleBatchDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 条攻略吗？`,
+      '批量删除',
+      { type: 'warning' }
+    )
+    const res = await interviewApi.batchDelete(selectedIds.value)
+    ElMessage.success(`删除成功 ${res.deleted} 条`)
+    selectedIds.value = []
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message)
+    }
   }
 }
 

@@ -1,13 +1,20 @@
 """
 公司 API 路由
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from models.database import get_db
 from schemas import CompanyCreate, CompanyUpdate, CompanyResponse, CompanyListResponse
 from models import Company
 
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/companies", tags=["公司管理"])
 
 
@@ -149,3 +156,31 @@ def delete_company(company_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "删除成功"}
+
+
+@router.post("/batch-delete")
+def batch_delete_companies(
+    data: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """批量删除公司"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="ids 不能为空")
+
+    companies = db.query(Company).filter(Company.id.in_(data.ids)).all()
+    skipped = []
+    deleted = 0
+    for company in companies:
+        if company.jds:
+            skipped.append(company.name)
+            continue
+        db.delete(company)
+        deleted += 1
+
+    db.commit()
+    logger.info(f"批量删除公司: 成功 {deleted}, 跳过 {len(skipped)}")
+
+    result = {"deleted": deleted, "skipped": len(skipped)}
+    if skipped:
+        result["skipped_names"] = skipped[:10]
+    return result

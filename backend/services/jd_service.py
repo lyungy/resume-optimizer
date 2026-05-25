@@ -3,12 +3,16 @@ JD 服务层
 """
 from __future__ import annotations
 import json
+import logging
 from typing import Optional
 from sqlalchemy.orm import Session
 from models import JobDescription, Company
-from schemas import JDCreate, JDUpdate, JDResponse, JDParseResult
+from schemas import JDCreate, JDUpdate, JDResponse, JDParseResult, JDBatchImportItem
 from services.llm import get_llm_client
 from services.llm.prompts import get_jd_parse_prompt
+from services.llm.usage_logger import log_llm_usage, timed_llm_call
+
+logger = logging.getLogger(__name__)
 
 
 class JDService:
@@ -31,6 +35,64 @@ class JDService:
         db.commit()
         db.refresh(jd)
         return jd
+
+    def batch_import(
+        self,
+        db: Session,
+        items: list[JDBatchImportItem],
+    ) -> dict:
+        """批量导入 JD，自动创建公司"""
+        success = 0
+        failed = 0
+        errors = []
+        imported_ids = []
+
+        # 缓存已查找的公司
+        company_cache: dict[str, str] = {}  # company_name -> company_id
+
+        for item in items:
+            try:
+                # 查找或创建公司
+                company_name = item.company_name.strip()
+                if company_name in company_cache:
+                    company_id = company_cache[company_name]
+                else:
+                    company = db.query(Company).filter(Company.name == company_name).first()
+                    if not company:
+                        company = Company(
+                            name=company_name,
+                            industry=item.industry,
+                        )
+                        db.add(company)
+                        db.flush()  # 获取 ID
+                        logger.info(f"自动创建公司: {company_name} -> {company.id}")
+                    company_id = company.id
+                    company_cache[company_name] = company_id
+
+                # 创建 JD
+                jd = JobDescription(
+                    company_id=company_id,
+                    title=item.title.strip(),
+                    raw_text=item.raw_text,
+                    source_url=item.source_url,
+                )
+                db.add(jd)
+                db.flush()
+                imported_ids.append(jd.id)
+                success += 1
+            except Exception as e:
+                failed += 1
+                errors.append(f"{item.title}: {str(e)}")
+                logger.warning(f"导入 JD 失败: {item.title} - {e}")
+
+        db.commit()
+        return {
+            "total": len(items),
+            "success": success,
+            "failed": failed,
+            "errors": errors[:10],  # 最多返回 10 条错误
+            "imported_ids": imported_ids,
+        }
 
     def get(self, db: Session, jd_id: str) -> Optional[JobDescription]:
         """获取 JD"""
@@ -119,25 +181,54 @@ class JDService:
             jd_text=jd.raw_text,
         )
 
-        # 调用 LLM
-        response = client.chat_json(
-            messages=messages,
-            model=llm_model,
-            temperature=0.3,
-            max_tokens=2000,
-        )
+        # 调用 LLM（带计时）
+        try:
+            response, metadata = timed_llm_call(
+                client, messages,
+                model=llm_model or client.default_model,
+                temperature=0.3, max_tokens=2000,
+            )
+        except Exception as e:
+            log_llm_usage(
+                db, feature="JD解析", llm_provider=client.provider.name,
+                llm_model=llm_model or client.default_model,
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                status="failed", error_message=str(e),
+                related_id=jd_id, related_type="jd",
+            )
+            raise ValueError(f"LLM 调用失败: {str(e)}")
 
         # 解析结果
         try:
             result = json.loads(response)
         except json.JSONDecodeError:
-            # 尝试提取 JSON 部分
             import re
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
                 result = json.loads(json_match.group())
             else:
+                log_llm_usage(
+                    db, feature="JD解析", llm_provider=client.provider.name,
+                    llm_model=llm_model or client.default_model,
+                    system_prompt=messages[0]["content"],
+                    user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+                    raw_response=response, status="failed",
+                    error_message="JSON 解析失败", related_id=jd_id, related_type="jd",
+                    **metadata,
+                )
                 raise ValueError(f"LLM 返回格式错误: {response[:200]}")
+
+        # 记录成功日志
+        log_llm_usage(
+            db, feature="JD解析", llm_provider=client.provider.name,
+            llm_model=llm_model or client.default_model,
+            system_prompt=messages[0]["content"],
+            user_prompt=messages[1]["content"] if len(messages) > 1 else None,
+            raw_response=response, parsed_result=result,
+            related_id=jd_id, related_type="jd",
+            **metadata,
+        )
 
         # 更新 JD
         jd.parsed_requirements = result
