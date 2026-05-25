@@ -105,10 +105,21 @@ async def search_and_match(
         # 去重
         seen_urls = set()
         unique_jobs = []
+        duplicates = []
         for job in all_jobs:
-            if job.url and job.url not in seen_urls:
+            if not job.url:
+                continue
+            if job.url in seen_urls:
+                duplicates.append(f"{job.title} @ {job.company_name}")
+            else:
                 seen_urls.add(job.url)
                 unique_jobs.append(job)
+        if duplicates:
+            print(f"  🔗 去重: {len(all_jobs)} → {len(unique_jobs)}（去除 {len(duplicates)} 条重复）")
+            for d in duplicates:
+                print(f"    重复: {d}")
+        else:
+            print(f"  ✅ 无重复: {len(unique_jobs)} 条")
 
         # 多维匹配打分
         results = []

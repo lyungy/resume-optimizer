@@ -306,69 +306,132 @@
     <el-drawer
       v-model="matchDrawerVisible"
       title="🔍 搜索匹配结果"
-      size="700px"
+      size="750px"
       :close-on-click-modal="false"
     >
       <div v-loading="searchMatching" element-loading-text="搜索匹配中...">
         <div v-if="matchResult.jobs?.length">
-          <p style="margin-bottom: 16px; color: #666">
-            共找到 {{ matchResult.total }} 个匹配岗位，按综合匹配度排序
-          </p>
-
-          <div v-for="(job, idx) in matchResult.jobs" :key="idx" class="match-job-card">
-            <div class="match-job-header">
-              <div class="match-job-title">
-                <span class="rank">#{{ idx + 1 }}</span>
-                {{ job.title }}
-              </div>
-              <div class="match-job-info">
-                {{ job.salary }} · {{ job.location }} · {{ job.company_name }}
-              </div>
-            </div>
-
-            <div class="match-score-bar">
-              <span class="score-label">综合</span>
-              <el-progress
-                :percentage="job.total_score"
-                :stroke-width="14"
-                :color="job.total_score >= 80 ? '#67c23a' : job.total_score >= 60 ? '#e6a23c' : '#f56c6c'"
-              />
-              <el-tag
-                :type="job.total_score >= 80 ? 'success' : job.total_score >= 60 ? 'warning' : 'danger'"
-                size="small"
-                style="margin-left: 8px"
-              >
-                {{ job.recommendation }}
-              </el-tag>
-            </div>
-
-            <div class="dimension-scores">
-              <div class="dim-item" v-for="(dim, key) in job.dimension_scores" :key="key">
-                <span class="dim-label">{{ dimLabels[key] }}</span>
-                <el-progress
-                  :percentage="dim.score"
-                  :stroke-width="8"
-                  :show-text="false"
-                  style="width: 80px"
+          <!-- 筛选条件 -->
+          <el-card shadow="never" style="margin-bottom: 16px">
+            <el-form :inline="true" size="small">
+              <el-form-item label="最低匹配度">
+                <el-slider
+                  v-model="matchFilters.minScore"
+                  :min="0"
+                  :max="100"
+                  :step="5"
+                  show-stops
+                  style="width: 150px"
                 />
-                <span class="dim-value">{{ dim.score }}</span>
+              </el-form-item>
+              <el-form-item label="大龄友好">
+                <el-select v-model="matchFilters.friendly" placeholder="不限" clearable style="width: 90px">
+                  <el-option label="是" :value="true" />
+                  <el-option label="否" :value="false" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="公司">
+                <el-input v-model="matchFilters.company" placeholder="模糊搜索" clearable style="width: 120px" />
+              </el-form-item>
+              <el-form-item>
+                <span style="color: #999; font-size: 12px">
+                  显示 {{ filteredJobs.length }} / {{ matchResult.total }} 条
+                </span>
+              </el-form-item>
+            </el-form>
+          </el-card>
+
+          <!-- 批量操作 -->
+          <div v-if="selectedMatchJobs.length" style="margin-bottom: 12px">
+            <el-button type="primary" size="small" @click="batchImportJobs">
+              📥 批量导入（{{ selectedMatchJobs.length }}）
+            </el-button>
+            <el-button size="small" @click="selectedMatchJobs = []">取消选择</el-button>
+          </div>
+
+          <!-- 全选 -->
+          <div style="margin-bottom: 8px">
+            <el-checkbox
+              :model-value="selectedMatchJobs.length === filteredJobs.length && filteredJobs.length > 0"
+              :indeterminate="selectedMatchJobs.length > 0 && selectedMatchJobs.length < filteredJobs.length"
+              @change="toggleSelectAll"
+            >
+              全选（{{ filteredJobs.length }}）
+            </el-checkbox>
+          </div>
+
+          <!-- 结果列表 -->
+          <div v-for="(job, idx) in filteredJobs" :key="idx" class="match-job-card">
+            <div style="display: flex; align-items: flex-start; gap: 8px">
+              <el-checkbox
+                :model-value="selectedMatchJobs.includes(job)"
+                @change="toggleJobSelect(job)"
+                style="margin-top: 4px"
+              />
+              <div style="flex: 1">
+                <div class="match-job-header">
+                  <div class="match-job-title">
+                    <span class="rank">#{{ idx + 1 }}</span>
+                    {{ job.title }}
+                  </div>
+                  <div class="match-job-info">
+                    {{ job.salary }} · {{ job.location }} · {{ job.company_name }}
+                  </div>
+                </div>
+
+                <div class="match-score-bar">
+                  <span class="score-label">综合</span>
+                  <el-progress
+                    :percentage="job.total_score"
+                    :stroke-width="14"
+                    :color="job.total_score >= 80 ? '#67c23a' : job.total_score >= 60 ? '#e6a23c' : '#f56c6c'"
+                  />
+                  <el-tag
+                    :type="job.total_score >= 80 ? 'success' : job.total_score >= 60 ? 'warning' : 'danger'"
+                    size="small"
+                    style="margin-left: 8px"
+                  >
+                    {{ job.recommendation }}
+                  </el-tag>
+                  <el-tag
+                    v-if="job.analysis?.friendly"
+                    type="success"
+                    size="small"
+                    style="margin-left: 4px"
+                  >
+                    大龄友好
+                  </el-tag>
+                </div>
+
+                <div class="dimension-scores">
+                  <div class="dim-item" v-for="(dim, key) in job.dimension_scores" :key="key">
+                    <span class="dim-label">{{ dimLabels[key] }}</span>
+                    <el-progress
+                      :percentage="dim.score"
+                      :stroke-width="8"
+                      :show-text="false"
+                      style="width: 80px"
+                    />
+                    <span class="dim-value">{{ dim.score }}</span>
+                  </div>
+                </div>
+
+                <div v-if="job.reasons?.length" class="match-reasons">
+                  <el-tag v-for="r in job.reasons" :key="r" size="small" type="success" style="margin: 2px">
+                    ✅ {{ r }}
+                  </el-tag>
+                </div>
+                <div v-if="job.gaps?.length" class="match-gaps">
+                  <el-tag v-for="g in job.gaps" :key="g" size="small" type="warning" style="margin: 2px">
+                    ⚠️ {{ g }}
+                  </el-tag>
+                </div>
+
+                <div class="match-job-actions">
+                  <el-button size="small" type="primary" @click="importJob(job)">导入系统</el-button>
+                  <el-button size="small" @click="openJobUrl(job.url)" v-if="job.url">查看JD</el-button>
+                </div>
               </div>
-            </div>
-
-            <div v-if="job.reasons?.length" class="match-reasons">
-              <el-tag v-for="r in job.reasons" :key="r" size="small" type="success" style="margin: 2px">
-                ✅ {{ r }}
-              </el-tag>
-            </div>
-            <div v-if="job.gaps?.length" class="match-gaps">
-              <el-tag v-for="g in job.gaps" :key="g" size="small" type="warning" style="margin: 2px">
-                ⚠️ {{ g }}
-              </el-tag>
-            </div>
-
-            <div class="match-job-actions">
-              <el-button size="small" type="primary" @click="importJob(job)">导入系统</el-button>
-              <el-button size="small" @click="openJobUrl(job.url)" v-if="job.url">查看JD</el-button>
             </div>
           </div>
         </div>
@@ -461,7 +524,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api, { resumeApi, companyApi } from '@/api'
 
@@ -513,6 +576,33 @@ const positionInputRef = ref(null)
 const matchDrawerVisible = ref(false)
 const searchMatching = ref(false)
 const matchResult = reactive({ total: 0, jobs: [] })
+const matchFilters = reactive({ minScore: 0, friendly: undefined, company: '' })
+const selectedMatchJobs = ref([])
+
+// 筛选后的结果
+const filteredJobs = computed(() => {
+  return (matchResult.jobs || []).filter(job => {
+    if (job.total_score < matchFilters.minScore) return false
+    if (matchFilters.friendly !== undefined && matchFilters.friendly !== '') {
+      if (job.analysis?.friendly !== matchFilters.friendly) return false
+    }
+    if (matchFilters.company && !job.company_name?.includes(matchFilters.company)) return false
+    return true
+  })
+})
+
+const toggleSelectAll = (checked) => {
+  selectedMatchJobs.value = checked ? [...filteredJobs.value] : []
+}
+
+const toggleJobSelect = (job) => {
+  const idx = selectedMatchJobs.value.indexOf(job)
+  if (idx >= 0) {
+    selectedMatchJobs.value.splice(idx, 1)
+  } else {
+    selectedMatchJobs.value.push(job)
+  }
+}
 
 // 版本历史
 const versionDrawerVisible = ref(false)
@@ -792,7 +882,7 @@ const startSearchMatch = async () => {
       city: jobPreference.city,
       salary_min: jobPreference.salary_min,
       salary_max: jobPreference.salary_max,
-      limit_per_keyword: 15,
+      limit_per_keyword: 30,
     })
     Object.assign(matchResult, data)
     ElMessage.success(`匹配完成，共 ${data.total} 个岗位`)
@@ -833,6 +923,49 @@ const importJob = async (job) => {
     ElMessage.error('导入失败: ' + (error.message || ''))
   }
 }
+
+const batchImportJobs = async () => {
+  if (!selectedMatchJobs.value.length) return
+
+  let success = 0
+  let failed = 0
+  for (const job of selectedMatchJobs.value) {
+    try {
+      let companyId = null
+      const companyName = job.company_name
+      if (companyName) {
+        const companies = await companyApi.list({ keyword: companyName, page_size: 1 })
+        const existing = companies.items?.find(c => c.name === companyName)
+        if (existing) {
+          companyId = existing.id
+        } else {
+          const newCompany = await companyApi.create({ name: companyName })
+          companyId = newCompany.id
+        }
+      }
+      if (!companyId) {
+        failed++
+        continue
+      }
+      await api.post('/jd', {
+        company_id: companyId,
+        title: job.title,
+        raw_text: job.description || `${job.title}\n${job.salary || ''}\n${job.experience || ''}\n${job.location || ''}`,
+        source_url: job.url,
+      })
+      success++
+    } catch (e) {
+      failed++
+    }
+  }
+  ElMessage.success(`批量导入完成: 成功 ${success}，失败 ${failed}`)
+  selectedMatchJobs.value = []
+}
+
+// 筛选变化时清空选择
+watch(() => [matchFilters.minScore, matchFilters.friendly, matchFilters.company], () => {
+  selectedMatchJobs.value = []
+})
 
 const openJobUrl = (url) => {
   if (url) window.open(url, '_blank')

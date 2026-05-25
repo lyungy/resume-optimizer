@@ -49,7 +49,7 @@ class SearchMatchRequest(BaseModel):
     city: str = "上海"
     salary_min: int | None = None
     salary_max: int | None = None
-    limit_per_keyword: int = 20
+    limit_per_keyword: int = 30
 
 
 class ResumeListResponse(BaseModel):

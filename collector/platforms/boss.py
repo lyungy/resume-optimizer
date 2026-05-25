@@ -10,25 +10,63 @@ from .base import BasePlatform, JobInfo
 from ..human import HumanSimulator
 
 
-# 平台水印噪音模式
-_NOISE_PATTERNS = [
-    re.compile(r'来自BOSS直聘', re.IGNORECASE),
-    re.compile(r'岗位[来自]*BOSS直聘', re.IGNORECASE),
-    re.compile(r'BOSS直聘', re.IGNORECASE),
-    re.compile(r'boss', re.IGNORECASE),
-    re.compile(r'kanzhun', re.IGNORECASE),
-    re.compile(r'直聘'),
-]
-
-
 def _clean_jd_text(text: str) -> str:
-    """去除 Boss直聘平台水印噪音"""
+    """深度净化 Boss直聘 JD 文本"""
     if not text:
         return text
-    cleaned = text
-    for pattern in _NOISE_PATTERNS:
-        cleaned = pattern.sub('', cleaned)
-    return re.sub(r'  +', ' ', cleaned).strip()
+
+    # 1. 移除所有 CSS 代码块
+    cleaned = re.sub(r'\.[A-Za-z_][\w-]*\s*\{[^}]*\}', '', text)
+    cleaned = re.sub(r'[A-Za-z_][\w-]*\s*\{[^}]{5,}\}', '', cleaned)
+
+    # 2. 移除残留的 CSS 属性值
+    cleaned = re.sub(
+        r'(?:display|visibility|overflow|font-style|font-weight|width|height)\s*:[^;{]+;?',
+        '', cleaned
+    )
+    cleaned = re.sub(r'!important', '', cleaned)
+
+    # 3. 提取 JD 核心段落（从职位描述/工作内容 到 关于我们/工作地址 之前）
+    jd_start = None
+    jd_end = None
+    for marker in ['职位描述', '工作内容', '岗位职责', '岗位描述', '职责描述', '工作职责']:
+        idx = cleaned.find(marker)
+        if idx != -1:
+            jd_start = idx + len(marker)
+            break
+    for marker in ['关于我们', '工作地址', '公司介绍', '公司信息']:
+        idx = cleaned.find(marker)
+        if idx != -1:
+            jd_end = idx
+            break
+    if jd_start is not None:
+        cleaned = cleaned[jd_start:]
+    if jd_end is not None:
+        cleaned = cleaned[:jd_end]
+
+    # 4. 按行清理
+    lines = cleaned.split('\n')
+    result = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # 跳过纯英文 CSS 残留
+        if re.match(r'^[A-Za-z_.\s:{};-]+$', line):
+            continue
+        # 跳过 Boss 导航/广告关键词
+        if any(kw in line for kw in [
+            '热门职位', '热门城市', '热门企业', '附近城市', '求职工具',
+            '升级VIP', '尊享特权', '去升级', '下载APP', '前往App',
+            '去App', '微信扫码分享', '点击查看地图', '查看更多信息',
+            '供应链经理招聘', '会务/会展策划', '4S店店长', '药店店员',
+        ]):
+            continue
+        result.append(line)
+
+    cleaned = '\n'.join(result)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
 # ========== 选择器常量 ==========
@@ -60,6 +98,10 @@ class BossPlatform(BasePlatform):
         self.detail_interval = config.get("detail_interval", [3, 6])
         self.human = HumanSimulator(browser.page, config.get("human", {}))
         self._is_on_search_page = False
+        # 采集数量范围
+        result_range = config.get("result_range", {})
+        self._result_min = result_range.get("min", 20)
+        self._result_max = result_range.get("max", 40)
 
     async def search(
         self,
@@ -95,18 +137,27 @@ class BossPlatform(BasePlatform):
             print(f"  ⚠️ 页面加载超时，可能需要登录或被反爬拦截")
             return []
 
-        # 3. 滚动加载（模拟真人滚动）
-        target_count = min(limit, 45)
-        await self._scroll_to_load(target_count)
+        # 3. 滚动加载（模拟真人滚动，随机目标数量）
+        import random as _random
+        scroll_target = _random.randint(self._result_min, self._result_max)
+        print(f"  🎯 目标采集: {scroll_target} 条（配置范围: {self._result_min}~{self._result_max}）")
+        await self._scroll_to_load(scroll_target)
 
-        # 4. 提取职位列表
+        # 4. 提取职位列表（用随机目标数截断，不用 limit）
         jobs = await self._extract_jobs_from_page()
-        jobs = jobs[:limit]
-        print(f"  📊 列表提取: {len(jobs)} 个岗位")
+        jobs = jobs[:scroll_target]
+        print(f"  📊 最终返回: {len(jobs)} 个岗位（目标 {scroll_target}）")
 
-        # 5. 可选：提取详情页 JD
-        if fetch_detail and jobs:
-            await self._fetch_details(jobs)
+        # 5. 逐条点击列表，采集右栏详情
+        if jobs:
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.warning(f">> 即将进入详情采集，jobs={len(jobs)}")
+            try:
+                await self._fetch_details_from_list(jobs)
+                _log.warning(">> 详情采集调用完成")
+            except Exception as e:
+                _log.error(f">> 详情采集异常: {e}", exc_info=True)
 
         return jobs
 
@@ -240,34 +291,63 @@ class BossPlatform(BasePlatform):
         return False
 
     async def _scroll_to_load(self, target_count: int):
-        """滚动加载更多职位（模拟真人滚动）"""
+        """滚动加载更多职位（模拟真人滚动，触发 lazy load）"""
+        import random as _random
+
         prev_count = 0
-        max_scrolls = 10
+        max_scrolls = 25
         no_change_count = 0
+        max_no_change = 4  # 连续 N 次无新内容才放弃
 
         for i in range(max_scrolls):
             current_count = await self.browser.evaluate(
-                f'() => document.querySelectorAll("{SEL_JOB_CARD}").length'
+                f'() => document.querySelectorAll("{SEL_JOB_CARD}, {SEL_JOB_CARD_ALT}").length'
             )
+            print(f"    滚动 {i+1}/{max_scrolls}: 当前 {current_count} 条，目标 {target_count} 条")
+
             if current_count >= target_count:
                 break
+
             if current_count == prev_count:
                 no_change_count += 1
-                if no_change_count >= 2:
+                if no_change_count >= max_no_change:
+                    print(f"    连续 {max_no_change} 次无新内容，停止滚动")
                     break
+                # 无新内容时多等一下（lazy load 可能有延迟）
+                await self.human.random_pause(1.0, 2.0)
             else:
                 no_change_count = 0
+
             prev_count = current_count
 
-            # 模拟真人滚动
-            await self.human.scroll_page()
+            # 滚动到页面底部（触发 lazy load）
+            await self.browser.evaluate(
+                '() => window.scrollTo(0, document.documentElement.scrollHeight)'
+            )
+
+            # 模拟真人停顿：滚动后等一下看新内容
+            await self.human.random_pause(0.8, 1.5)
+
+            # 偶尔回滚一点（模拟真人浏览行为）
+            if _random.random() < 0.3:
+                back_dist = _random.randint(100, 300)
+                await self.browser.evaluate(f'() => window.scrollBy(0, -{back_dist})')
+                await self.human.random_pause(0.3, 0.8)
+
+        final_count = await self.browser.evaluate(
+            f'() => document.querySelectorAll("{SEL_JOB_CARD}, {SEL_JOB_CARD_ALT}").length'
+        )
+        print(f"    ✅ 滚动完成: {final_count} 条")
 
     async def _extract_jobs_from_page(self) -> list[JobInfo]:
         """从当前页提取职位列表"""
         js_code = """
         () => {
             const jobs = [];
-            const cards = document.querySelectorAll('li.job-card-box');
+            // 多选择器兼容
+            const cards = document.querySelectorAll('li.job-card-box, .job-card-box, .job-list-box li');
+            const totalCards = cards.length;
+            let skipped = 0;
 
             for (const card of cards) {
                 try {
@@ -306,16 +386,20 @@ class BossPlatform(BasePlatform):
                             location,
                             url: jobUrl.startsWith('http') ? jobUrl : '',
                         });
+                    } else {
+                        skipped++;
                     }
                 } catch(e) {
-                    continue;
+                    skipped++;
                 }
             }
-            return jobs;
+            return {jobs, totalCards, skipped};
         }
         """
         try:
-            raw_jobs = await self.browser.evaluate(js_code)
+            result = await self.browser.evaluate(js_code)
+            raw_jobs = result["jobs"]
+            print(f"  🔍 DOM 卡片: {result['totalCards']} 个, 有效: {len(raw_jobs)} 个, 跳过: {result['skipped']} 个")
         except Exception as e:
             print(f"  ⚠️ JS 提取失败: {e}")
             return []
@@ -344,7 +428,198 @@ class BossPlatform(BasePlatform):
 
         return jobs
 
-    # ========== 详情页 ==========
+    # ========== 列表内点击详情 ==========
+
+    # 右栏详情选择器
+    SEL_DETAIL_TEXT = '.job-detail-section .job-sec-text, .job-sec-text, .job-detail .text'
+    SEL_LEFT_CARDS = 'li.job-card-box, .job-card-box, .job-list-box li'
+
+    async def _fetch_details_from_list(self, jobs: list[JobInfo]):
+        """在搜索结果页逐条点击左栏卡片，采集右栏详情"""
+        import random as _random
+        import logging
+        _log = logging.getLogger(__name__)
+
+        total = len(jobs)
+        max_details = 15
+        click_rate = 0.65
+        detail_count = 0
+        clicked_urls = set()
+
+        _log.warning(f">> 详情采集开始（最多 {max_details} 条）")
+
+        # 先滚回顶部
+        await self.browser.evaluate('() => window.scrollTo(0, 0)')
+        await asyncio.sleep(1.5)
+
+        # 循环：全部用 page.evaluate 操作 DOM（Patchright ElementHandle.evaluate 不兼容）
+        no_new_count = 0
+        sel_js = self.SEL_LEFT_CARDS.replace("'", "\\'")
+        while detail_count < max_details:
+            # 获取所有卡片 URL + index
+            card_infos = await self.browser.evaluate(
+                """() => { """
+                f"const cards = document.querySelectorAll('{sel_js}');"
+                """const r = [];
+                cards.forEach((el, i) => {
+                    const a = el.querySelector('a');
+                    if (a && a.href) r.push({index: i, url: a.href});
+                });
+                return r; }"""
+            )
+            if not card_infos:
+                break
+
+            # 找一个没点过的卡片
+            found = False
+            for info in card_infos:
+                if detail_count >= max_details:
+                    break
+
+                card_url = info.get('url', '')
+                card_index = info.get('index', 0)
+                if not card_url or card_url in clicked_urls:
+                    continue
+
+                if _random.random() > click_rate:
+                    continue
+
+                # 匹配 job
+                matched_job = None
+                for job in jobs:
+                    if job.url == card_url:
+                        matched_job = job
+                        break
+                if not matched_job:
+                    continue
+
+                try:
+                    # JS: 滚动到卡片 + 点击
+                    click_js = (
+                        """() => { """
+                        f"const cards = document.querySelectorAll('{sel_js}');"
+                        f"const card = cards[{card_index}];"
+                        """if (!card) return false;
+                        card.scrollIntoView({behavior: 'instant', block: 'center'});
+                        const link = card.querySelector('a');
+                        if (link) link.addEventListener('click', e => e.preventDefault(), {once: true});
+                        card.click();
+                        return true; }"""
+                    )
+                    clicked = await self.browser.evaluate(click_js)
+                    if not clicked:
+                        continue
+
+                    clicked_urls.add(card_url)
+                    detail_count += 1
+                    no_new_count = 0
+                    _log.warning(f"    [{detail_count}] 点击: {matched_job.title}")
+
+                    # 等待右栏渲染（Boss 加载可能较慢）
+                    await asyncio.sleep(_random.uniform(2.0, 3.5))
+
+                    # 提取「职位描述」下的内容
+                    _M = '["\u804c\u4f4d\u63cf\u8ff0","\u5c97\u4f4d\u63cf\u8ff0","\u5c97\u4f4d\u804c\u8d23"]'
+                    _S = '["\u4efb\u804c\u8981\u6c42","\u5c97\u4f4d\u8981\u6c42","\u5173\u4e8e\u6211\u4eec","\u516c\u53f8\u4ecb\u7ecd","\u798f\u5229\u5f85\u9047","\u5de5\u4f5c\u5730\u5740"]'
+                    detail_text = await self.browser.evaluate(
+                        "() => {"
+                        "var MARKERS = " + _M + ";"
+                        "var STOPS = " + _S + ";"
+                        "var all = document.querySelectorAll('*');"
+                        "var title = null;"
+                        "for (var i = 0; i < all.length; i++) {"
+                        "  var t = (all[i].textContent || '').trim();"
+                        "  for (var j = 0; j < MARKERS.length; j++) {"
+                        "    if (t === MARKERS[j]) { title = all[i]; break; }"
+                        "  }"
+                        "  if (title) break;"
+                        "}"
+                        "if (title) {"
+                        "  var p = title.parentElement;"
+                        "  while (p && p.children.length < 2 && p !== document.body) p = p.parentElement;"
+                        "  if (p) {"
+                        "    var on = false, parts = [];"
+                        "    for (var k = 0; k < p.children.length; k++) {"
+                        "      var c = p.children[k];"
+                        "      if (c === title || c.contains(title)) { on = true; continue; }"
+                        "      if (on) {"
+                        "        var ct = (c.textContent || '').trim();"
+                        "        var stop = false;"
+                        "        for (var m = 0; m < STOPS.length; m++) {"
+                        "          if (ct.indexOf(STOPS[m]) === 0 && ct.length < 20) { stop = true; break; }"
+                        "        }"
+                        "        if (stop) break;"
+                        "        parts.push(ct);"
+                        "      }"
+                        "    }"
+                        "    if (parts.length > 0) return {text: parts.join('\\n'), method: 'title'};"
+                        "  }"
+                        "}"
+                        "var sels = ['.job-detail-section .job-sec-text', '.job-sec-text', '.job-detail-section', '.job-detail'];"
+                        "for (var n = 0; n < sels.length; n++) {"
+                        "  var e = document.querySelector(sels[n]);"
+                        "  if (e && e.textContent.trim().length > 50) return {text: e.textContent.trim(), method: 'sel:' + sels[n]};"
+                        "}"
+                        "return {text: '', method: 'none'};"
+                        "}"
+                    )
+
+                    if detail_text and detail_text.get('text'):
+                        await self._simulate_reading()
+                        matched_job.description = _clean_jd_text(detail_text['text'])
+                        method = detail_text.get('method', '')
+                        _log.warning(f"    [{detail_count}] ✅ {matched_job.title} ({len(matched_job.description)} 字) [{method}]")
+                    else:
+                        method = detail_text.get('method', '未知') if detail_text else 'null'
+                        debug = detail_text.get('debug', []) if detail_text else []
+                        debug_str = ''
+                        if debug:
+                            debug_str = '\n      '.join([
+                                f"  {d.get('tag','?')}.{d.get('cls','')[:40]} id={d.get('id','')} text={d.get('text','')[:60]}..."
+                                for d in debug[:5]
+                            ])
+                        _log.warning(f"    [{detail_count}] ⚠️ 详情为空: {matched_job.title} [{method}]")
+                        if debug_str:
+                            _log.warning(f"      右栏结构:\n      {debug_str}")
+
+                    await self.human.random_pause(2.0, 4.0)
+
+                    if detail_count > 0 and detail_count % _random.randint(5, 8) == 0:
+                        rest = _random.uniform(6.0, 10.0)
+                        _log.warning(f"    💤 休息 {rest:.0f}s...")
+                        await asyncio.sleep(rest)
+
+                    found = True
+                    break  # 重新获取卡片列表
+
+                except Exception as e:
+                    _log.warning(f"    ⚠️ 失败: {matched_job.title} - {e}")
+                    continue
+
+            if not found:
+                no_new_count += 1
+                if no_new_count >= 3:
+                    break
+                await self.browser.evaluate('() => window.scrollBy(0, 300)')
+                await asyncio.sleep(1.0)
+
+        _log.warning(f">> 详情采集完成: {detail_count}/{total} 条")
+
+    async def _simulate_reading(self):
+        """模拟阅读右栏详情"""
+        import random as _random
+        scroll_rounds = _random.randint(1, 3)
+        for _ in range(scroll_rounds):
+            distance = _random.randint(100, 300)
+            await self.browser.evaluate(
+                f'() => {{ '
+                f'const el = document.querySelector(".job-detail-section, .job-detail, .detail-content"); '
+                f'if (el) el.scrollTop += {distance}; '
+                f'else window.scrollBy(0, {distance}); }}'
+            )
+            await asyncio.sleep(_random.uniform(0.3, 1.0))
+
+    # ========== 详情页（旧版，保留备用） ==========
 
     async def _fetch_details(self, jobs: list[JobInfo]):
         """批量提取详情页 JD（带频率控制）"""

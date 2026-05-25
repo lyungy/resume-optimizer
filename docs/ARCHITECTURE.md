@@ -1,6 +1,6 @@
 # 简历优化系统 - 技术架构文档
 
-> 版本：v1.0 | 更新日期：2026-05-20
+> 版本：v1.1 | 更新日期：2026-05-25
 
 ---
 
@@ -266,6 +266,35 @@ resume-optimizer/
 | preparation_strategy | JSON | 准备策略 |
 | company_research | JSON | 公司调研 |
 | export_docx_path | VARCHAR(500) | 导出文件路径 |
+
+**resume_versions**
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | VARCHAR(36) | UUID 主键 |
+| resume_id | VARCHAR(36) | 外键→resumes |
+| version_number | INTEGER | 版本号 |
+| snapshot | JSON | 快照（skills/experience/work 等） |
+| change_source | VARCHAR(50) | 变更来源（upload/parse/deep_analyze/manual） |
+| change_summary | TEXT | 变更摘要 |
+| created_at | DATETIME | 创建时间 |
+
+**llm_usage_logs**
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | VARCHAR(36) | UUID 主键 |
+| provider | VARCHAR(50) | LLM Provider |
+| model | VARCHAR(100) | 模型名称 |
+| operation | VARCHAR(50) | 操作类型（parse/deep_analyze/optimize/generate） |
+| target_id | VARCHAR(36) | 关联对象 ID |
+| target_type | VARCHAR(20) | 关联对象类型（jd/resume/optimization/interview） |
+| prompt_tokens | INTEGER | 输入 token 数 |
+| completion_tokens | INTEGER | 输出 token 数 |
+| total_tokens | INTEGER | 总 token 数 |
+| cost_yuan | FLOAT | 费用（元） |
+| latency_ms | INTEGER | 响应时间（毫秒） |
+| status | VARCHAR(20) | 状态（success/error） |
+| error_message | TEXT | 错误信息 |
+| created_at | DATETIME | 创建时间 |
 
 ---
 
@@ -660,4 +689,32 @@ server {
 
 | 日期 | 版本 | 变更内容 |
 |------|------|----------|
+| 2026-05-25 | v1.1 | 功能扩展 + 代码质量 + 采集优化 |
 | 2026-05-20 | v1.0 | 初始版本，完成核心功能 |
+
+### v1.1 变更详情
+
+**后端**
+- LLM 用量日志：`llm_usage_logs` 表，所有 AI 调用自动记录 token/费用/延迟
+- 简历版本管理：`resume_versions` 表，上传/解析/深度分析自动快照，支持版本恢复
+- 批量操作：公司/JD/优化/面试攻略均支持批量删除，JD 支持批量导入
+- 简历模板库：5 套内置模板，前端可选择模板执行优化
+- LLM 日志 API：`/api/v1/llm-logs` + `/api/v1/llm-logs/stats`
+- 重命名：「AI 解析」→「智能解析」「深度解析」→「职业画像」
+- Prompt 编辑器支持：智能解析/职业画像执行前可自定义 System Prompt
+
+**前端**
+- Pinia 状态管理：resume/jd/optimization stores
+- 组合式函数：useRequest（加载/错误状态）、useTable（分页/筛选）
+- Prompt 编辑抽屉：查看/修改默认 Prompt，支持恢复默认
+- 版本历史抽屉：查看简历历史版本，支持一键恢复
+- 优化对比视图：原简历 vs 优化结果并排对比
+- LLM 日志页面：调用记录表格 + 用量统计卡片
+- 批量删除：所有列表页支持复选框 + 批量操作
+
+**采集模块**
+- 列表页详情采集：点击左栏卡片读取右栏详情，无需跳转详情页
+- JD 文本净化：CSS 去噪、段落提取（「职位描述」到「关于我们」）
+- 采集数量可配：`config.yaml` 中 `result_range.min/max`
+- 滚动优化：随机目标、回滚概率、容忍度机制
+- 仿真增强：贝塞尔曲线鼠标、逐字输入、随机阅读模拟

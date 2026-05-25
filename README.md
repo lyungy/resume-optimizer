@@ -6,13 +6,14 @@
 
 | 模块 | 功能 |
 |------|------|
-| **公司管理** | 公司信息 CRUD，按行业/规模筛选 |
-| **JD 管理** | JD 创建、LLM 智能解析（技能要求、大龄友好度分析） |
-| **简历管理** | DOCX 上传、LLM 增强解析（技能、工作年限、工作经历提取） |
-| **简历优化** | 选择 JD + 简历 → LLM 优化 → 匹配度分析、关键词覆盖、优化建议 |
+| **公司管理** | 公司信息 CRUD，按行业/规模筛选，批量删除 |
+| **JD 管理** | JD 创建、批量导入、LLM 智能解析（技能要求、大龄友好度分析） |
+| **简历管理** | DOCX 上传、LLM 智能解析/职业画像、版本历史管理、技能图谱 |
+| **简历优化** | 选择 JD + 简历 → LLM 优化 → 匹配度分析、关键词覆盖、模板库 |
 | **面试攻略** | 知识点清单、高频面试题、答题模板、准备策略、DOCX 导出 |
-| **岗位采集** | Boss直聘自动搜索、大龄友好度分析、自动导入系统 |
-| **LLM 配置** | 从 OpenClaw 自动导入，支持 MiMo / DeepSeek 切换 |
+| **岗位采集** | Boss直聘自动搜索、列表页详情采集、大龄友好度分析、自动导入 |
+| **LLM 日志** | Token 用量统计、调用链追踪、成本分析 |
+| **Prompt 编辑** | 智能解析/职业画像执行前可查看和修改 System Prompt |
 
 ## 技术栈
 
@@ -102,29 +103,46 @@ resume-optimizer/
 ├── .venv/                      # Python 虚拟环境（共用）
 ├── backend/                    # FastAPI 后端
 │   ├── api/                    # API 路由层
+│   │   ├── company.py          # 公司 CRUD + 批量删除
+│   │   ├── jd.py               # JD CRUD + 批量导入
+│   │   ├── resume.py           # 简历上传/解析/职业画像/版本管理
+│   │   ├── optimization.py     # 简历优化 + 批量删除
+│   │   ├── interview.py        # 面试攻略
+│   │   ├── llm.py              # LLM 配置查询
+│   │   ├── llm_logs.py         # LLM 调用日志
+│   │   ├── templates.py        # 简历模板库
+│   │   ├── collector.py        # 采集 API
+│   │   └── stats.py            # 统计仪表盘
 │   ├── services/               # 业务逻辑层
-│   ├── models/                 # SQLAlchemy 模型
+│   │   └── llm/                # LLM 适配层（client + prompts + usage_logger）
+│   ├── models/                 # SQLAlchemy 模型（含 resume_version、llm_usage_log）
 │   ├── schemas/                # Pydantic Schema
-│   ├── utils/                  # DOCX 解析/生成
-│   ├── scripts/                # 工具脚本
+│   ├── utils/                  # DOCX 解析/生成 + logger
+│   ├── data/templates/         # 简历模板库
 │   ├── main.py                 # FastAPI 入口
 │   ├── config.py               # 配置管理
 │   └── config.yaml             # LLM 配置
 ├── collector/                  # 岗位采集模块
 │   ├── __main__.py             # CLI 入口
 │   ├── browser.py              # 浏览器控制器
+│   ├── human.py                # 仿真操作（贝塞尔曲线鼠标、逐字输入）
 │   ├── analyzer.py             # JD 友好度分析
+│   ├── matcher.py              # 简历匹配分析
 │   ├── importer.py             # 系统导入器
 │   ├── platforms/              # 招聘平台适配器
-│   ├── config.yaml             # 采集配置
-│   └── data/                   # 运行时数据
+│   │   ├── base.py             # 平台基类
+│   │   └── boss.py             # Boss直聘（搜索+列表详情采集+JD净化）
+│   ├── config.yaml             # 采集配置（含 result_range、human 仿真参数）
+│   └── data/                   # 运行时数据（搜索结果、浏览器 profile）
 ├── frontend/                   # Vue 3 前端
 │   └── src/
-│       ├── views/              # 页面组件
+│       ├── views/              # 页面组件（含 LLMLogs.vue）
+│       ├── stores/             # Pinia 状态管理
+│       ├── composables/        # 组合式函数（useRequest、useTable）
 │       ├── api.js              # API 封装
 │       └── router.js           # 路由
 ├── data/                       # 数据目录
-│   ├── db/                     # SQLite 数据库
+│   ├── db/                     # SQLite 数据库（7张表）
 │   └── files/                  # DOCX 文件
 ├── docs/                       # 文档
 │   └── ARCHITECTURE.md         # 技术架构文档
@@ -138,16 +156,24 @@ resume-optimizer/
 |------|------|------|
 | POST | `/api/v1/companies` | 创建公司 |
 | GET | `/api/v1/companies` | 公司列表 |
+| POST | `/api/v1/companies/batch-delete` | 批量删除公司 |
 | POST | `/api/v1/jd` | 创建 JD |
-| POST | `/api/v1/jd/{id}/parse` | LLM 解析 JD |
+| POST | `/api/v1/jd/batch-import` | 批量导入 JD |
+| POST | `/api/v1/jd/{id}/parse` | LLM 智能解析 JD |
 | POST | `/api/v1/resume/upload` | 上传简历 |
-| POST | `/api/v1/resume/{id}/parse` | LLM 解析简历 |
+| POST | `/api/v1/resume/{id}/parse` | LLM 智能解析简历 |
+| POST | `/api/v1/resume/{id}/deep-analyze` | LLM 职业画像 |
+| GET | `/api/v1/resume/{id}/versions` | 简历版本历史 |
+| POST | `/api/v1/resume/versions/{id}/restore` | 恢复历史版本 |
 | POST | `/api/v1/optimization` | 创建优化任务 |
 | POST | `/api/v1/optimization/{id}/execute` | 执行优化 |
 | GET | `/api/v1/optimization/{id}/download` | 下载优化简历 |
 | POST | `/api/v1/interview` | 创建面试攻略 |
 | POST | `/api/v1/interview/{id}/generate` | 生成攻略内容 |
 | GET | `/api/v1/interview/{id}/download` | 下载攻略文档 |
+| GET | `/api/v1/templates` | 简历模板库 |
+| GET | `/api/v1/llm-logs` | LLM 调用日志 |
+| GET | `/api/v1/llm-logs/stats` | LLM 用量统计 |
 | GET | `/api/v1/stats/dashboard` | 仪表盘统计 |
 | GET | `/api/v1/llm/providers` | LLM Provider 列表 |
 
